@@ -1,4 +1,4 @@
-package com.example.calmspace.ui.theme
+package com.calmspace.ui.theme
 
 import android.app.Activity
 import android.os.Build

@@ -1,4 +1,4 @@
-package com.example.calmspace.ui.theme
+package com.calmspace.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
