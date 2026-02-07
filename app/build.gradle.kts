@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.calmspace"
+    namespace = "com.calmspace"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "com.example.calmspace"
+        applicationId = "com.calmspace"
         minSdk = 30
         targetSdk = 36
         versionCode = 1
