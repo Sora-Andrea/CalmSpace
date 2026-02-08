@@ -4,13 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.padding
-import com.calmspace.ui.components.bottomNavigationBar
+import androidx.7navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.calmspace.ui.authentication.loginScreen
+import com.calmspace.ui.authentication.signupScreen
+import com.calmspace.ui.authentication.welcomeScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,24 +20,32 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             CalmSpaceTheme {
-                CalmSpaceApp()
+                val navController = rememberNavController()
+
+                NavHost(
+                    navController = navController,
+                    startDestination = "welcome"
+                ) {
+                    composable("welcome") {
+                        welcomeScreen(
+                            onLoginClick = { navController.navigate("login") },
+                            onSignupClick = { navController.navigate("signup") }
+                        )
+                    }
+
+                    composable("login") {
+                        loginScreen(
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable("signup") {
+                        signupScreen(
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                }
             }
         }
-    }
-}
-
-// ─────────────────────────────────────────────
-// Application Layout
-// ─────────────────────────────────────────────
-
-@Composable
-fun CalmSpaceApp() {
-    Scaffold(
-        bottomBar = { bottomNavigationBar() }
-    ) { paddingValues ->
-        Text(
-            text = "Main Screen",
-            modifier = Modifier.padding(paddingValues)
-        )
     }
 }
