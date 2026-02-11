@@ -16,7 +16,7 @@ import androidx.compose.runtime.Composable
 // ─────────────────────────────────────────────
 
 @Composable
-fun bottomNavigationBar() 
+fun BottomNavigationBar() 
 {
     NavigationBar {
 

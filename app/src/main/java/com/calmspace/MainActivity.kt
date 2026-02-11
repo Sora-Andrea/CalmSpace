@@ -7,10 +7,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.calmspace.ui.authentication.loginScreen
-import com.calmspace.ui.authentication.signupScreen
-import com.calmspace.ui.authentication.welcomeScreen
-import com.calmspace.ui.onboarding.questionnaireScreen
+import com.calmspace.ui.authentication.LoginScreen
+import com.calmspace.ui.authentication.SignupScreen
+import com.calmspace.ui.authentication.WelcomeScreen
+import com.calmspace.ui.onboarding.QuestionnaireScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
 
 class MainActivity : ComponentActivity() {
@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
 
                     // ───────── Welcome Screen ─────────
                     composable("welcome") {
-                        welcomeScreen(
+                        WelcomeScreen(
                             onLoginClick = {
                                 navController.navigate("login")
                             },
@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
 
                     // ───────── Login Screen ─────────
                     composable("login") {
-                        loginScreen(
+                        LoginScreen(
                             onBack = {
                                 navController.popBackStack()
                             },
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
 
                     // ───────── Signup Screen ─────────
                     composable("signup") {
-                        signupScreen(
+                        SignupScreen(
                             onBackToLogin = {
                                 navController.popBackStack()
                             },
@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
 
                     // ───────── Questionnaire Screen ─────────
                     composable("questionnaire") {
-                        questionnaireScreen(
+                        QuestionnaireScreen(
                             onFinish = {
                                 // TODO:
                                 // - Save onboarding completion

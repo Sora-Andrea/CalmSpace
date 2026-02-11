@@ -7,10 +7,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.unit.dp
 
+// ─────────────────────────────────────────────
+// Login Screen
+// ─────────────────────────────────────────────
+
 @Composable
-fun loginScreen(
+fun LoginScreen(
     onBack: () -> Unit,
     onLogin: (String, String) -> Unit
 ) {
@@ -20,6 +29,7 @@ fun loginScreen(
     // ─────────────────────────────────────────────
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
 
     // ─────────────────────────────────────────────
     // Layout
@@ -81,7 +91,26 @@ fun loginScreen(
             value = password,
             onValueChange = { password = it },
             label = { Text("Enter Your Password") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            visualTransformation =
+                if (passwordVisible)
+                    VisualTransformation.None
+                else
+                    PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(
+                    onClick = { passwordVisible = !passwordVisible }
+                ) {
+                    Icon(
+                        imageVector =
+                            if (passwordVisible)
+                                Icons.Default.Visibility
+                            else
+                                Icons.Default.VisibilityOff,
+                        contentDescription = "Toggle password visibility"
+                    )
+                }
+            }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -103,12 +132,7 @@ fun loginScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // ───────── Back Navigation ─────────
-        TextButton(
-            onClick = {
-                // Navigate back to Welcome screen
-                onBack()
-            }
-        ) {
+        TextButton(onClick = onBack) {
             Text("Back")
         }
 
@@ -119,33 +143,41 @@ fun loginScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Divider(modifier = Modifier.weight(1f))
+            HorizontalDivider(modifier = Modifier.weight(1f))
             Text(
                 text = "  Or  ",
                 color = Color.Gray
             )
-            Divider(modifier = Modifier.weight(1f))
+            HorizontalDivider(modifier = Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // ───────── Social Login Placeholders ─────────
-        OutlinedButton(
+        // ───────── Facebook Login ─────────
+        Button(
             onClick = {
                 // TODO: Facebook login
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.Black
+            )
         ) {
-            Text("Login with Facebook")
+            Text("Login with Facebook", color = Color.White)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // ───────── Google Login ─────────
         OutlinedButton(
             onClick = {
                 // TODO: Google login
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
         ) {
             Text("Login with Google")
         }

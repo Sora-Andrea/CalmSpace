@@ -20,7 +20,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun signupScreen(
+fun SignupScreen(
     onBackToLogin: () -> Unit,
     onSignup: (String, String, String) -> Unit
 ) {

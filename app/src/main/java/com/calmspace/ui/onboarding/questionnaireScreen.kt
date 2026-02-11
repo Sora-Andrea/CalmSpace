@@ -16,10 +16,9 @@ import androidx.compose.ui.unit.dp
 // Questionnaire Screen
 // First-time onboarding flow
 // Includes permissions as final step
-// ─────────────────────────────────────────────
 
 @Composable
-fun questionnaireScreen(
+fun QuestionnaireScreen(
     onFinish: () -> Unit
 ) {
 
@@ -34,7 +33,6 @@ fun questionnaireScreen(
 
     var micPermission by remember { mutableStateOf(false) }
     var notificationPermission by remember { mutableStateOf(false) }
-
     val totalPages = 5
     val pagerState = rememberPagerState(pageCount = { totalPages })
 
