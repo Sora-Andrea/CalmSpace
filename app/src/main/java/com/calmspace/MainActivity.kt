@@ -4,14 +4,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-
 import com.calmspace.ui.authentication.loginScreen
 import com.calmspace.ui.authentication.signupScreen
 import com.calmspace.ui.authentication.welcomeScreen
+import com.calmspace.ui.onboarding.questionnaireScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
 
 class MainActivity : ComponentActivity() {
@@ -63,19 +62,37 @@ class MainActivity : ComponentActivity() {
                             onBackToLogin = {
                                 navController.popBackStack()
                             },
-                                onSignup = { username, email, password ->
+                            onSignup = { username, email, password ->
                                 // TODO:
                                 // - Create account
                                 // - Handle success / error
-                                navController.navigate("home")
+
+                                // IMPORTANT:
+                                // Signup now goes to onboarding questionnaire
+                                navController.navigate("questionnaire")
+                            }
+                        )
+                    }
+
+                    // ───────── Questionnaire Screen ─────────
+                    composable("questionnaire") {
+                        questionnaireScreen(
+                            onFinish = {
+                                // TODO:
+                                // - Save onboarding completion
+                                // - Navigate to dashboard
+                                navController.navigate("home") {
+                                    popUpTo("welcome") { inclusive = true }
+                                }
                             }
                         )
                     }
 
                     // ───────── Home Screen (placeholder) ─────────
-                    //composable("home") {
-                        // TODO: Replace with real home / bottom navigation
-                    //}
+                    composable("home") {
+                        // TODO:
+                        // Replace with real dashboard / bottom navigation
+                    }
                 }
             }
         }
