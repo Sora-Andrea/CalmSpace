@@ -17,6 +17,7 @@ import com.calmspace.ui.authentication.WelcomeScreen
 import com.calmspace.ui.components.BottomNavigationBar
 import com.calmspace.ui.onboarding.QuestionnaireScreen
 import com.calmspace.ui.screens.HomeScreen
+import com.calmspace.ui.screens.MonitorScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
 
 // ─────────────────────────────────────────────
@@ -141,7 +142,7 @@ class MainActivity : ComponentActivity() {
                         composable(Routes.HOME) {
                             HomeScreen(
                                 onStartSession = {
-                                    // TODO: Navigate to active sleep session screen
+                                    navController.navigate(Routes.MONITOR)
                                 },
                                 onSeeAllSessions = {
                                     // TODO: Navigate to session history screen
@@ -149,9 +150,13 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // ───────── Monitor Screen (placeholder) ─────────
+                        // ───────── Monitor Screen ─────────
                         composable(Routes.MONITOR) {
-                            // TODO: Replace with real MonitorScreen
+                            MonitorScreen(
+                                onStopRecording = {
+                                    // TODO: Stop foreground service, finalize session
+                                }
+                            )
                         }
 
                         // ───────── Profile Screen (placeholder) ─────────
