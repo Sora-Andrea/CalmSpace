@@ -1,12 +1,17 @@
 package com.calmspace
 
-import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -15,9 +20,10 @@ import com.calmspace.ui.authentication.signupScreen
 import com.calmspace.ui.authentication.welcomeScreen
 import com.calmspace.ui.player.mediaPlayerScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
+import androidx.core.net.toUri
 
 class MainActivity : ComponentActivity() {
-    private var mediaPlayer: MediaPlayer? = null
+    private var exoPlayer: ExoPlayer? = null
     private val isLoopPlayingState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,26 +74,35 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun createLoopingPlayerIfNeeded() {
-        if (mediaPlayer == null) {
-            mediaPlayer = MediaPlayer.create(this, R.raw.rain_from_indoors_perfect_loop).apply {
-                isLooping = true
+        if (exoPlayer == null) {
+            val rawUri =
+                "android.resource://$packageName/${R.raw.rain_from_indoors_perfect_loop}".toUri()
+            val mediaItem = MediaItem.fromUri(rawUri)
+
+            exoPlayer = ExoPlayer.Builder(this).build().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                    true
+                )
+                setMediaItem(mediaItem)
+                repeatMode = Player.REPEAT_MODE_ONE
+                prepare()
             }
         }
     }
 
     private fun startLoopPlayback() {
         createLoopingPlayerIfNeeded()
-        mediaPlayer?.start()
+        exoPlayer?.play()
         isLoopPlayingState.value = true
     }
 
     private fun stopLoopPlayback() {
-        mediaPlayer?.let { player ->
-            if (player.isPlaying) {
-                player.pause()
-                player.seekTo(0)
-            }
-        }
+        exoPlayer?.pause()
+        exoPlayer?.seekToDefaultPosition()
         isLoopPlayingState.value = false
     }
 
@@ -100,8 +115,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        mediaPlayer?.release()
-        mediaPlayer = null
+        exoPlayer?.release()
+        exoPlayer = null
         super.onDestroy()
     }
 }
