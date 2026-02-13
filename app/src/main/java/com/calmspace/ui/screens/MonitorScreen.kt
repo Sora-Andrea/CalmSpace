@@ -10,9 +10,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,7 +23,7 @@ import androidx.compose.ui.unit.sp
 // ─────────────────────────────────────────────
 // Monitor Screen
 // Active sleep session view
-// Shows sleep time, mic threshold, audio controls
+// Shows sleep time, ambient noise info, and audio controls
 // ─────────────────────────────────────────────
 
 @Composable
@@ -48,16 +45,11 @@ fun MonitorScreen(
     // TODO: Replace with real last detected noise event timestamp from Room
     val lastDetected = "Detected 2m ago"
 
-    // TODO: Replace with real threshold from user preferences / Room
-    var micThreshold by remember { mutableStateOf(0.7f) }
-
     // TODO: Replace with actual selected sound from user profile
     val currentSound = "White Noise"
 
-    // TODO: Replace with real playback position from audio service
-    var playbackPosition by remember { mutableStateOf(0.4f) }
-    val playbackStart = "2:15"
-    val playbackEnd = "3:22"
+    // TODO: Replace with real isPlaying state from audio service
+    var isPlaying by remember { mutableStateOf(true) }
 
     Column(
         modifier = Modifier
@@ -109,7 +101,6 @@ fun MonitorScreen(
             contentAlignment = Alignment.Center,
             modifier = Modifier.size(200.dp)
         ) {
-            // Outer ring
             Box(
                 modifier = Modifier
                     .size(200.dp)
@@ -119,7 +110,6 @@ fun MonitorScreen(
                         shape = CircleShape
                     )
             )
-            // Middle ring
             Box(
                 modifier = Modifier
                     .size(150.dp)
@@ -129,7 +119,6 @@ fun MonitorScreen(
                         shape = CircleShape
                     )
             )
-            // Inner ring
             Box(
                 modifier = Modifier
                     .size(100.dp)
@@ -139,7 +128,6 @@ fun MonitorScreen(
                         shape = CircleShape
                     )
             )
-            // Center icon
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     imageVector = Icons.Default.Bedtime,
@@ -181,45 +169,6 @@ fun MonitorScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // ───────── Microphone Threshold Card ─────────
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.VolumeUp,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp)
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Microphone Threshold",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-
-                    // TODO: Wire to sensitivity setting in ViewModel
-                    // TODO: Persist updated value to Room user preferences
-                    Slider(
-                        value = micThreshold,
-                        onValueChange = { micThreshold = it },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         // ───────── Audio Player Card ─────────
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -253,70 +202,29 @@ fun MonitorScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                // ───── Playback Scrubber ─────
-                // TODO: Wire to real audio playback position from audio service
-                Slider(
-                    value = playbackPosition,
-                    onValueChange = { playbackPosition = it },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
+                // ───── Play/Pause Button ─────
+                // No scrubber or skip controls for ambient loops
+                // TODO: Add scrubber + skip controls when audiobook feature is implemented
+                // TODO: Wire isPlaying and onClick to audio service
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Text(
-                        text = playbackStart,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-                    Text(
-                        text = playbackEnd,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ───── Playback Controls ─────
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // TODO: Wire to audio service skip previous
-                    IconButton(onClick = { }) {
-                        Icon(
-                            imageVector = Icons.Default.SkipPrevious,
-                            contentDescription = "Previous",
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-
-                    // TODO: Wire to audio service play/pause
                     FilledIconButton(
-                        onClick = { },
+                        onClick = { isPlaying = !isPlaying },
                         modifier = Modifier.size(56.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Pause,
-                            contentDescription = "Pause",
+                            contentDescription = if (isPlaying) "Pause" else "Play",
                             modifier = Modifier.size(28.dp)
                         )
                     }
-
-                    // TODO: Wire to audio service skip next
-                    IconButton(onClick = { }) {
-                        Icon(
-                            imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
