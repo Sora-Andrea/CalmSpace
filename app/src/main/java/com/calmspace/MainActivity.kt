@@ -18,6 +18,7 @@ import com.calmspace.ui.components.BottomNavigationBar
 import com.calmspace.ui.onboarding.QuestionnaireScreen
 import com.calmspace.ui.screens.HomeScreen
 import com.calmspace.ui.screens.MonitorScreen
+import com.calmspace.ui.screens.ProfileScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
 
 // ─────────────────────────────────────────────
@@ -159,9 +160,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // ───────── Profile Screen (placeholder) ─────────
+                        // ───────── Profile Screen ─────────
                         composable(Routes.PROFILE) {
-                            // TODO: Replace with real ProfileScreen
+                            ProfileScreen()
                         }
 
                         // ───────── Settings Screen (placeholder) ─────────
