@@ -15,7 +15,8 @@ import androidx.compose.ui.unit.dp
 // ─────────────────────────────────────────────
 // Questionnaire Screen
 // First-time onboarding flow
-// Includes permissions as final step
+// Section names match ProfileScreen questionnaire items
+// ─────────────────────────────────────────────
 
 @Composable
 fun QuestionnaireScreen(
@@ -26,13 +27,14 @@ fun QuestionnaireScreen(
     // Questionnaire State
     // TODO: Move to ViewModel later
     // ─────────────────────────────────────────────
+    var sleepSchedule by remember { mutableStateOf("") }
     var sleepEnvironment by remember { mutableStateOf("") }
-    var noiseSensitivity by remember { mutableStateOf("") }
-    val commonNoises = remember { mutableStateListOf<String>() }
-    var sleepSound by remember { mutableStateOf("") }
+    var sleepHabits by remember { mutableStateOf("") }
+    val healthFactors = remember { mutableStateListOf<String>() }
 
     var micPermission by remember { mutableStateOf(false) }
     var notificationPermission by remember { mutableStateOf(false) }
+    
     val totalPages = 5
     val pagerState = rememberPagerState(pageCount = { totalPages })
 
@@ -68,8 +70,21 @@ fun QuestionnaireScreen(
         ) { page ->
             when (page) {
 
-                // ───── Page 1: Sleep Environment ─────
+                // ───── Page 1: Sleep Schedule ─────
                 0 -> RadioQuestion(
+                    title = "Sleep Schedule",
+                    options = listOf(
+                        "Regular schedule (same time daily)",
+                        "Mostly regular (weekday/weekend split)",
+                        "Irregular schedule",
+                        "Shift work / rotating schedule"
+                    ),
+                    selected = sleepSchedule,
+                    onSelect = { sleepSchedule = it }
+                )
+
+                // ───── Page 2: Sleep Environment ─────
+                1 -> RadioQuestion(
                     title = "Sleep Environment",
                     options = listOf(
                         "Quiet",
@@ -81,44 +96,31 @@ fun QuestionnaireScreen(
                     onSelect = { sleepEnvironment = it }
                 )
 
-                // ───── Page 2: Noise Sensitivity ─────
-                1 -> RadioQuestion(
-                    title = "Noise Sensitivity",
+                // ───── Page 3: Sleep Habits ─────
+                2 -> RadioQuestion(
+                    title = "Sleep Habits",
                     options = listOf(
-                        "Light sleeper",
-                        "Average sleeper",
-                        "Heavy sleeper"
+                        "Fall asleep easily",
+                        "Occasionally have trouble falling asleep",
+                        "Frequently struggle to fall asleep",
+                        "Severe insomnia"
                     ),
-                    selected = noiseSensitivity,
-                    onSelect = { noiseSensitivity = it }
+                    selected = sleepHabits,
+                    onSelect = { sleepHabits = it }
                 )
 
-                // ───── Page 3: Common Noise Types ─────
-                2 -> CheckboxQuestion(
-                    title = "Common Noise Types",
+                // ───── Page 4: Health Factors ─────
+                3 -> CheckboxQuestion(
+                    title = "Health Factors",
                     options = listOf(
-                        "Traffic / vehicles",
-                        "Voices / neighbors",
-                        "Pets",
-                        "Household sounds",
-                        "Sudden loud noises",
-                        "Not sure"
+                        "Stress or anxiety",
+                        "Noise sensitivity",
+                        "Light sensitivity",
+                        "Sleep apnea or breathing issues",
+                        "Chronic pain",
+                        "None of the above"
                     ),
-                    selectedItems = commonNoises
-                )
-
-                // ───── Page 4: Sleep Sound ─────
-                3 -> RadioQuestion(
-                    title = "Preferred Sleep Sound",
-                    options = listOf(
-                        "White noise",
-                        "Brown noise",
-                        "Rain",
-                        "Ocean waves",
-                        "Fan"
-                    ),
-                    selected = sleepSound,
-                    onSelect = { sleepSound = it }
+                    selectedItems = healthFactors
                 )
 
                 // ───── Page 5: Permissions ─────
@@ -141,8 +143,8 @@ fun QuestionnaireScreen(
             repeat(totalPages) { index ->
                 Box(
                     modifier = Modifier
-                        .size(10.dp)
                         .padding(4.dp)
+                        .size(8.dp)
                         .background(
                             color = if (pagerState.currentPage == index)
                                 MaterialTheme.colorScheme.primary
@@ -232,7 +234,7 @@ fun CheckboxQuestion(
 }
 
 // ─────────────────────────────────────────────
-// Permissions Page  (will create a component once Settings is implemented)
+// Permissions Page
 // ─────────────────────────────────────────────
 
 @Composable
@@ -279,7 +281,7 @@ fun PermissionPage(
 }
 
 // ─────────────────────────────────────────────
-// Permission Row Component (will create a component once Settings imnplemented)
+// Permission Row Component
 // ─────────────────────────────────────────────
 
 @Composable
