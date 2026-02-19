@@ -28,9 +28,6 @@ import com.calmspace.ui.screens.HomeScreen
 import com.calmspace.ui.screens.MonitorScreen
 import com.calmspace.ui.screens.ProfileScreen
 import com.calmspace.ui.screens.SettingsScreen
-import com.calmspace.ui.authentication.loginScreen
-import com.calmspace.ui.authentication.signupScreen
-import com.calmspace.ui.authentication.welcomeScreen
 import com.calmspace.ui.player.mediaPlayerScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
 import androidx.core.net.toUri
