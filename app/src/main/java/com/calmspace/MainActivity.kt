@@ -1,5 +1,6 @@
 package com.calmspace
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,6 +8,13 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -21,7 +29,12 @@ import com.calmspace.ui.screens.MonitorScreen
 import com.calmspace.ui.screens.PrivacyPolicyScreen
 import com.calmspace.ui.screens.ProfileScreen
 import com.calmspace.ui.screens.SettingsScreen
+import com.calmspace.ui.authentication.loginScreen
+import com.calmspace.ui.authentication.signupScreen
+import com.calmspace.ui.authentication.welcomeScreen
+import com.calmspace.ui.player.mediaPlayerScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
+import androidx.core.net.toUri
 
 // ─────────────────────────────────────────────
 // Route Constants
@@ -50,6 +63,8 @@ val bottomNavRoutes = setOf(
 )
 
 class MainActivity : ComponentActivity() {
+    private var exoPlayer: ExoPlayer? = null
+    private val isLoopPlayingState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
