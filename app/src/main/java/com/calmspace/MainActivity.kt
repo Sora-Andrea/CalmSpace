@@ -18,6 +18,7 @@ import com.calmspace.ui.components.BottomNavigationBar
 import com.calmspace.ui.onboarding.QuestionnaireScreen
 import com.calmspace.ui.screens.HomeScreen
 import com.calmspace.ui.screens.MonitorScreen
+import com.calmspace.ui.screens.PrivacyPolicyScreen
 import com.calmspace.ui.screens.ProfileScreen
 import com.calmspace.ui.screens.SettingsScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
@@ -35,6 +36,7 @@ object Routes {
     const val MONITOR = "monitor"
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
+    const val PRIVACY_POLICY = "privacy_policy"
 }
 
 // ─────────────────────────────────────────────
@@ -168,7 +170,20 @@ class MainActivity : ComponentActivity() {
 
                         // ───────── Settings Screen ─────────
                         composable(Routes.SETTINGS) {
-                            SettingsScreen()
+                            SettingsScreen(
+                                onNavigateToPrivacyPolicy = {
+                                    navController.navigate(Routes.PRIVACY_POLICY)
+                                }
+                            )
+                        }
+
+                        // ───────── Privacy Policy Screen ─────────
+                        composable(Routes.PRIVACY_POLICY) {
+                            PrivacyPolicyScreen(
+                                onBack = {
+                                    navController.popBackStack()
+                                }
+                            )
                         }
                     }
                 }

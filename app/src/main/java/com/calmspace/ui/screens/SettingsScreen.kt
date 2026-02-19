@@ -23,7 +23,9 @@ import com.calmspace.ui.components.AppIcons
 // ─────────────────────────────────────────────
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    onNavigateToPrivacyPolicy: () -> Unit = {}
+) {
 
     // ─────────────────────────────────────────────
     // Placeholder State
@@ -272,12 +274,12 @@ fun SettingsScreen() {
             onClick = { }
         )
 
-        // TODO: Navigate to privacy policy screen
+        // Navigate to privacy policy screen
         SettingsItem(
             icon = AppIcons.Shield,
             title = "Privacy Policy",
             value = null,
-            onClick = { }
+            onClick = onNavigateToPrivacyPolicy
         )
 
         Spacer(modifier = Modifier.height(24.dp))
