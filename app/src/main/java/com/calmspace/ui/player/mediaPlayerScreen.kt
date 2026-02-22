@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 
 data class PlaybackTrackOption(
     val id: String,
@@ -36,8 +37,10 @@ fun mediaPlayerScreen(
     trackOptions: List<PlaybackTrackOption>,
     selectedTrackId: String,
     playerLevels: List<Float>,
+    playbackDbfs: Float,
     isMicRunning: Boolean,
     micLevels: List<Float>,
+    micDbfs: Float,
     hasMicPermission: Boolean,
     onTrackSelected: (String) -> Unit,
     onTogglePlayback: () -> Unit,
@@ -100,6 +103,7 @@ fun mediaPlayerScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(text = if (isPlaying) "Audio loop is playing" else "Audio loop is stopped")
+        Text(text = "Level: ${formatDbfs(playbackDbfs)} dBFS")
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -126,6 +130,7 @@ fun mediaPlayerScreen(
                 else -> "Microphone visualizer is stopped"
             }
         )
+        Text(text = "Level: ${formatDbfs(micDbfs)} dBFS")
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -147,4 +152,9 @@ fun mediaPlayerScreen(
             )
         }
     }
+}
+
+private fun formatDbfs(dbfs: Float): String {
+    val rounded = ((dbfs.coerceIn(-80f, 0f)) * 10f).roundToInt() / 10f
+    return if (rounded == -0.0f) "0.0" else rounded.toString()
 }

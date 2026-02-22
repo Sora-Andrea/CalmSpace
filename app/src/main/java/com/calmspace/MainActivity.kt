@@ -45,6 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.log10
 import kotlin.math.sqrt
 
 // ─────────────────────────────────────────────
@@ -78,6 +79,8 @@ class MainActivity : ComponentActivity() {
         private const val VISUALIZER_BAR_COUNT = 32
         private const val MIC_SAMPLE_RATE_HZ = 44100
         private const val MIC_BUFFER_SIZE = 2048
+        private const val VISUALIZER_DB_FLOOR = -80f
+        private const val VISUALIZER_DB_CEILING = 0f
     }
 
     private var exoPlayer: ExoPlayer? = null
@@ -86,7 +89,9 @@ class MainActivity : ComponentActivity() {
     private val playbackTrackOptions = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
     private val selectedTrackIdState = mutableStateOf(availablePlaybackTracks.firstOrNull()?.id.orEmpty())
     private val playbackLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val playbackDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
     private val micLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val micDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
     private val isMicRunningState = mutableStateOf(false)
     private val hasMicPermissionState = mutableStateOf(false)
 
@@ -239,8 +244,10 @@ class MainActivity : ComponentActivity() {
                                 trackOptions = playbackTrackOptions,
                                 selectedTrackId = selectedTrackIdState.value,
                                 playerLevels = playbackLevelsState.value,
+                                playbackDbfs = playbackDbfsState.value,
                                 isMicRunning = isMicRunningState.value,
                                 micLevels = micLevelsState.value,
+                                micDbfs = micDbfsState.value,
                                 hasMicPermission = hasMicPermissionState.value,
                                 onTrackSelected = { trackId -> selectPlaybackTrack(trackId) },
                                 onTogglePlayback = { toggleLoopPlayback() },
@@ -314,7 +321,8 @@ class MainActivity : ComponentActivity() {
         exoPlayer?.seekToDefaultPosition()
         isLoopPlayingState.value = false
         stopPlaybackVisualizerSync()
-        refreshPlaybackLevelsFromSelectedTrack(0)
+        playbackLevelsState.value = emptyLevels()
+        playbackDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
     private fun toggleLoopPlayback() {
@@ -332,12 +340,16 @@ class MainActivity : ComponentActivity() {
                 val player = exoPlayer
                 val track = selectedPlaybackTrack()
                 if (player != null && track != null && player.isPlaying) {
-                    val level = sampleTrackLevelAtPosition(
+                    val dbfs = sampleTrackDbfsAtPosition(
                         track = track,
                         positionMs = player.currentPosition,
                         durationMs = player.duration
                     )
-                    playbackLevelsState.value = pushLevel(playbackLevelsState.value, level)
+                    playbackDbfsState.value = dbfs
+                    playbackLevelsState.value = pushLevel(
+                        playbackLevelsState.value,
+                        dbfsToVisualizerLevel(dbfs)
+                    )
                 }
                 awaitFrame()
             }
@@ -350,15 +362,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshPlaybackLevelsFromSelectedTrack(startIndex: Int) {
-        val levels = selectedPlaybackTrack()?.envelopeLevels
-        if (levels == null || levels.isEmpty()) {
-            playbackLevelsState.value = emptyLevels()
-            return
-        }
-
-        val safeStart = ((startIndex % levels.size) + levels.size) % levels.size
-        val seedLevel = levels[safeStart]
-        playbackLevelsState.value = List(VISUALIZER_BAR_COUNT) { seedLevel }
+        playbackLevelsState.value = emptyLevels()
+        playbackDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
     // --- Microphone amplitude source ---
@@ -425,9 +430,14 @@ class MainActivity : ComponentActivity() {
             while (isActive) {
                 val samplesRead = recorder.read(sampleBuffer, 0, sampleBuffer.size)
                 if (samplesRead > 0) {
-                    val level = calculateMicrophoneLevel(sampleBuffer, samplesRead)
+                    val linearLevel = calculateMicrophoneLevel(sampleBuffer, samplesRead)
+                    val micDbfs = linearToDbfs(linearLevel)
                     runOnUiThread {
-                        micLevelsState.value = pushLevel(micLevelsState.value, level)
+                        micDbfsState.value = micDbfs
+                        micLevelsState.value = pushLevel(
+                            micLevelsState.value,
+                            dbfsToVisualizerLevel(micDbfs)
+                        )
                     }
                 }
             }
@@ -448,6 +458,7 @@ class MainActivity : ComponentActivity() {
         micAudioRecord = null
         isMicRunningState.value = false
         micLevelsState.value = emptyLevels()
+        micDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
     // --- Shared visualizer helpers ---
@@ -458,13 +469,13 @@ class MainActivity : ComponentActivity() {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun sampleTrackLevelAtPosition(
+    private fun sampleTrackDbfsAtPosition(
         track: PlaybackTrack,
         positionMs: Long,
         durationMs: Long
     ): Float {
-        val levels = track.envelopeLevels
-        if (levels.isEmpty()) return 0f
+        val levels = track.envelopeDbfsLevels
+        if (levels.isEmpty()) return VISUALIZER_DB_FLOOR
         val safeDurationMs = durationMs.coerceAtLeast((track.envelopeHopMs * levels.size).toLong())
         val wrappedPositionMs = ((positionMs % safeDurationMs) + safeDurationMs) % safeDurationMs
         val positionInBins = wrappedPositionMs.toDouble() / track.envelopeHopMs.toDouble()
@@ -487,6 +498,18 @@ class MainActivity : ComponentActivity() {
     private fun pushLevel(history: List<Float>, level: Float): List<Float> {
         val trimmed = if (history.size >= VISUALIZER_BAR_COUNT) history.drop(1) else history
         return trimmed + level
+    }
+
+    private fun linearToDbfs(linear: Float): Float {
+        if (linear <= 1e-12f) return VISUALIZER_DB_FLOOR
+        val db = (20.0 * log10(linear.toDouble())).toFloat()
+        return db.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
+    }
+
+    private fun dbfsToVisualizerLevel(dbfs: Float): Float {
+        val clamped = dbfs.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
+        return ((clamped - VISUALIZER_DB_FLOOR) /
+            (VISUALIZER_DB_CEILING - VISUALIZER_DB_FLOOR)).coerceIn(0f, 1f)
     }
 
     private fun lerp(start: Float, end: Float, fraction: Float): Float {
