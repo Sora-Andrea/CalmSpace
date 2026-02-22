@@ -1,20 +1,27 @@
 package com.calmspace
 
-import android.net.Uri
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -28,9 +35,17 @@ import com.calmspace.ui.screens.HomeScreen
 import com.calmspace.ui.screens.MonitorScreen
 import com.calmspace.ui.screens.ProfileScreen
 import com.calmspace.ui.screens.SettingsScreen
+import com.calmspace.ui.player.PlaybackTrackOption
+import com.calmspace.ui.player.PlaybackTrack
+import com.calmspace.ui.player.PrecomputedPlaybackTracks
 import com.calmspace.ui.player.mediaPlayerScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
-import androidx.core.net.toUri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.math.sqrt
 
 // ─────────────────────────────────────────────
 // Route Constants
@@ -45,6 +60,7 @@ object Routes {
     const val MONITOR = "monitor"
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
+    const val MEDIA_PLAYER = "media_player"
 }
 
 // ─────────────────────────────────────────────
@@ -58,12 +74,46 @@ val bottomNavRoutes = setOf(
 )
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val VISUALIZER_BAR_COUNT = 32
+        private const val MIC_SAMPLE_RATE_HZ = 44100
+        private const val MIC_BUFFER_SIZE = 2048
+    }
+
     private var exoPlayer: ExoPlayer? = null
     private val isLoopPlayingState = mutableStateOf(false)
+    private val availablePlaybackTracks = PrecomputedPlaybackTracks.tracks
+    private val playbackTrackOptions = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
+    private val selectedTrackIdState = mutableStateOf(availablePlaybackTracks.firstOrNull()?.id.orEmpty())
+    private val playbackLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val micLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val isMicRunningState = mutableStateOf(false)
+    private val hasMicPermissionState = mutableStateOf(false)
+
+    private var playbackSyncJob: Job? = null
+    private var loadedTrackId: String? = null
+    private var micAudioRecord: AudioRecord? = null
+    private var micCaptureJob: Job? = null
+
+    private val microphonePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasMicPermissionState.value = granted
+        if (granted) {
+            try {
+                startMicrophoneVisualizer()
+            } catch (_: SecurityException) {
+                hasMicPermissionState.value = false
+                isMicRunningState.value = false
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hasMicPermissionState.value = hasRecordAudioPermission()
+        refreshPlaybackLevelsFromSelectedTrack(0)
 
         setContent {
             CalmSpaceTheme {
@@ -91,7 +141,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.WELCOME,
+                        startDestination = Routes.MEDIA_PLAYER,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
@@ -182,9 +232,274 @@ class MainActivity : ComponentActivity() {
                         composable(Routes.SETTINGS) {
                             SettingsScreen()
                         }
+
+                        composable(Routes.MEDIA_PLAYER) {
+                            mediaPlayerScreen(
+                                isPlaying = isLoopPlayingState.value,
+                                trackOptions = playbackTrackOptions,
+                                selectedTrackId = selectedTrackIdState.value,
+                                playerLevels = playbackLevelsState.value,
+                                isMicRunning = isMicRunningState.value,
+                                micLevels = micLevelsState.value,
+                                hasMicPermission = hasMicPermissionState.value,
+                                onTrackSelected = { trackId -> selectPlaybackTrack(trackId) },
+                                onTogglePlayback = { toggleLoopPlayback() },
+                                onToggleMicrophone = { toggleMicrophoneVisualizer() },
+                                onRequestMicrophonePermission = { requestMicrophonePermission() }
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    // --- ExoPlayer amplitude source (precomputed waveform) ---
+    private fun createLoopingPlayerIfNeeded() {
+        if (exoPlayer == null) {
+            exoPlayer = ExoPlayer.Builder(this).build().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                    true
+                )
+                repeatMode = Player.REPEAT_MODE_ONE
+            }
+        }
+    }
+
+    private fun selectedPlaybackTrack() = PrecomputedPlaybackTracks.findById(selectedTrackIdState.value)
+
+    private fun selectPlaybackTrack(trackId: String) {
+        if (trackId == selectedTrackIdState.value) return
+        val wasPlaying = isLoopPlayingState.value
+        selectedTrackIdState.value = trackId
+        loadedTrackId = null
+        refreshPlaybackLevelsFromSelectedTrack(0)
+
+        if (exoPlayer != null) {
+            loadSelectedTrackIntoPlayer()
+            if (wasPlaying) {
+                exoPlayer?.play()
+                startPlaybackVisualizerSync()
+            }
+        }
+    }
+
+    private fun loadSelectedTrackIntoPlayer() {
+        val track = selectedPlaybackTrack() ?: return
+        createLoopingPlayerIfNeeded()
+        if (loadedTrackId == track.id) return
+
+        exoPlayer?.apply {
+            val mediaItem = MediaItem.fromUri("android.resource://$packageName/${track.rawResId}")
+            setMediaItem(mediaItem)
+            prepare()
+            seekToDefaultPosition()
+        }
+        loadedTrackId = track.id
+    }
+
+    private fun startLoopPlayback() {
+        loadSelectedTrackIntoPlayer()
+        exoPlayer?.play()
+        isLoopPlayingState.value = true
+        startPlaybackVisualizerSync()
+    }
+
+    private fun stopLoopPlayback() {
+        exoPlayer?.pause()
+        exoPlayer?.seekToDefaultPosition()
+        isLoopPlayingState.value = false
+        stopPlaybackVisualizerSync()
+        refreshPlaybackLevelsFromSelectedTrack(0)
+    }
+
+    private fun toggleLoopPlayback() {
+        if (isLoopPlayingState.value) {
+            stopLoopPlayback()
+        } else {
+            startLoopPlayback()
+        }
+    }
+
+    private fun startPlaybackVisualizerSync() {
+        stopPlaybackVisualizerSync()
+        playbackSyncJob = lifecycleScope.launch {
+            while (isActive) {
+                val player = exoPlayer
+                val track = selectedPlaybackTrack()
+                if (player != null && track != null && player.isPlaying) {
+                    val level = sampleTrackLevelAtPosition(
+                        track = track,
+                        positionMs = player.currentPosition,
+                        durationMs = player.duration
+                    )
+                    playbackLevelsState.value = pushLevel(playbackLevelsState.value, level)
+                }
+                awaitFrame()
+            }
+        }
+    }
+
+    private fun stopPlaybackVisualizerSync() {
+        playbackSyncJob?.cancel()
+        playbackSyncJob = null
+    }
+
+    private fun refreshPlaybackLevelsFromSelectedTrack(startIndex: Int) {
+        val levels = selectedPlaybackTrack()?.envelopeLevels
+        if (levels == null || levels.isEmpty()) {
+            playbackLevelsState.value = emptyLevels()
+            return
+        }
+
+        val safeStart = ((startIndex % levels.size) + levels.size) % levels.size
+        val seedLevel = levels[safeStart]
+        playbackLevelsState.value = List(VISUALIZER_BAR_COUNT) { seedLevel }
+    }
+
+    // --- Microphone amplitude source ---
+    private fun requestMicrophonePermission() {
+        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun toggleMicrophoneVisualizer() {
+        if (isMicRunningState.value) {
+            stopMicrophoneVisualizer()
+        } else {
+            startMicrophoneVisualizer()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startMicrophoneVisualizer() {
+        if (isMicRunningState.value) return
+        if (!hasRecordAudioPermission()) {
+            hasMicPermissionState.value = false
+            requestMicrophonePermission()
+            return
+        }
+
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            MIC_SAMPLE_RATE_HZ,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBufferSize <= 0) return
+
+        val bufferSize = maxOf(minBufferSize, MIC_BUFFER_SIZE)
+        val recorder = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                MIC_SAMPLE_RATE_HZ,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                bufferSize
+            )
+        } catch (_: SecurityException) {
+            return
+        }
+
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
+            return
+        }
+
+        micAudioRecord = recorder
+        try {
+            recorder.startRecording()
+        } catch (_: SecurityException) {
+            recorder.release()
+            micAudioRecord = null
+            isMicRunningState.value = false
+            return
+        }
+        isMicRunningState.value = true
+
+        micCaptureJob = lifecycleScope.launch(Dispatchers.Default) {
+            val sampleBuffer = ShortArray(MIC_BUFFER_SIZE / 2)
+
+            while (isActive) {
+                val samplesRead = recorder.read(sampleBuffer, 0, sampleBuffer.size)
+                if (samplesRead > 0) {
+                    val level = calculateMicrophoneLevel(sampleBuffer, samplesRead)
+                    runOnUiThread {
+                        micLevelsState.value = pushLevel(micLevelsState.value, level)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopMicrophoneVisualizer() {
+        micCaptureJob?.cancel()
+        micCaptureJob = null
+
+        micAudioRecord?.let { recorder ->
+            try {
+                recorder.stop()
+            } catch (_: IllegalStateException) {
+            }
+            recorder.release()
+        }
+        micAudioRecord = null
+        isMicRunningState.value = false
+        micLevelsState.value = emptyLevels()
+    }
+
+    // --- Shared visualizer helpers ---
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun sampleTrackLevelAtPosition(
+        track: PlaybackTrack,
+        positionMs: Long,
+        durationMs: Long
+    ): Float {
+        val levels = track.envelopeLevels
+        if (levels.isEmpty()) return 0f
+        val safeDurationMs = durationMs.coerceAtLeast((track.envelopeHopMs * levels.size).toLong())
+        val wrappedPositionMs = ((positionMs % safeDurationMs) + safeDurationMs) % safeDurationMs
+        val positionInBins = wrappedPositionMs.toDouble() / track.envelopeHopMs.toDouble()
+        val baseIndex = (positionInBins.toInt() % levels.size).coerceAtLeast(0)
+        val nextIndex = (baseIndex + 1) % levels.size
+        val fraction = (positionInBins - baseIndex).toFloat().coerceIn(0f, 1f)
+        return lerp(levels[baseIndex], levels[nextIndex], fraction)
+    }
+
+    private fun calculateMicrophoneLevel(buffer: ShortArray, samplesRead: Int): Float {
+        var sumSquares = 0.0
+        for (i in 0 until samplesRead) {
+            val value = buffer[i].toDouble()
+            sumSquares += value * value
+        }
+        val rms = sqrt(sumSquares / samplesRead)
+        return (rms / 32767.0).toFloat().coerceIn(0f, 1f)
+    }
+
+    private fun pushLevel(history: List<Float>, level: Float): List<Float> {
+        val trimmed = if (history.size >= VISUALIZER_BAR_COUNT) history.drop(1) else history
+        return trimmed + level
+    }
+
+    private fun lerp(start: Float, end: Float, fraction: Float): Float {
+        return start + (end - start) * fraction
+    }
+
+    private fun emptyLevels(): List<Float> = List(VISUALIZER_BAR_COUNT) { 0f }
+
+    override fun onDestroy() {
+        stopMicrophoneVisualizer()
+        stopPlaybackVisualizerSync()
+        exoPlayer?.release()
+        exoPlayer = null
+        super.onDestroy()
     }
 }
