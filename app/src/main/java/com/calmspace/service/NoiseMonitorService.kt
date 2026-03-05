@@ -1,0 +1,539 @@
+package com.calmspace.service
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioRecord
+import android.media.AudioTrack
+import android.media.MediaRecorder
+import android.os.Binder
+import android.os.IBinder
+import android.os.PowerManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.log10
+import kotlin.math.sqrt
+import kotlin.random.Random
+
+// ─────────────────────────────────────────────────────────────────────
+// Noise Monitor Service
+//
+// Foreground service that handles both:
+//   1. Ambient noise monitoring via microphone (AudioRecord)
+//   2. Adaptive white noise masking playback (AudioTrack)
+//
+// The screen binds to this service and calls startWhiteNoise() /
+// stopWhiteNoise() to control playback. Volume is applied internally
+// based on the calculated maskingVolume — the screen does not need to
+// manage volume at all.
+//
+// HEADPHONES IMPLEMENTATION NOTES:
+// ─────────────────────────────────────────────────────────────────────
+// TODO: Detect headphone connection/disconnection
+//   - Use AudioManager.registerAudioDeviceCallback() to detect when
+//     headphones are plugged/unplugged or Bluetooth connects
+//   - Adjust volume scaling when headphones detected (see below)
+//   - Pause/resume playback based on headphone state if desired
+//
+// TODO: Different volume limits for headphones vs speakers
+//   - Speakers: Allow full 0.0-1.0 range (user's ears have distance protection)
+//   - Headphones: Cap maximum at 0.7 (70%) to prevent hearing damage
+//   - Store headphone state and apply different MAX_VOLUME constant
+//
+// TODO: Volume curve adjustment for headphones
+//   - Headphones deliver sound directly to ear canal (more sensitive)
+//   - Consider using a gentler curve (e.g., cube root instead of sqrt)
+//   - Lower starting volume floor for headphones (0.2 vs 0.5)
+//
+// TODO: Safety fade-in on headphone connection
+//   - If user plugs in headphones mid-session, fade volume from 0 to
+//     current level over 1-2 seconds to avoid startle
+//   - Detect device change via AudioManager callback
+//
+// TODO: Different audio routing for headphones
+//   - AudioTrack should use AudioAttributes.USAGE_MEDIA for headphones
+//   - Consider AudioAttributes.USAGE_ASSISTANCE_SONIFICATION for speakers
+//   - This ensures proper audio focus behavior
+// ─────────────────────────────────────────────────────────────────────
+
+class NoiseMonitorService : Service() {
+
+    companion object {
+        private const val CHANNEL_ID = "noise_monitor"
+        private const val NOTIFICATION_ID = 1
+        const val QUIET_TIMEOUT_MS = 1000L
+        private const val SILENT_CALIBRATION_MS = 2000L
+        private const val WN_CALIBRATION_MS    = 1000L
+        private const val ATTACK_SMOOTHING = 0.55f
+        private const val DECAY_SMOOTHING  = 0.88f
+        private const val SAMPLE_RATE = 44100
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // State exposed to UI
+    // ─────────────────────────────────────────────────────────────────
+
+    private val _currentDb     = MutableStateFlow(0f)
+    val currentDb: StateFlow<Float> = _currentDb.asStateFlow()
+
+    private val _baselineDb    = MutableStateFlow(0f)
+    val baselineDb: StateFlow<Float> = _baselineDb.asStateFlow()
+
+    private val _soundEvents   = MutableStateFlow<List<SoundEvent>>(emptyList())
+    val soundEvents: StateFlow<List<SoundEvent>> = _soundEvents.asStateFlow()
+
+    private val _statusMessage = MutableStateFlow("Ready")
+    val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
+
+    private val _isRecording   = MutableStateFlow(false)
+    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+
+    private val _isPlaying     = MutableStateFlow(false)
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    private val _startingVolume = MutableStateFlow(0.5f)
+    val startingVolume: StateFlow<Float> = _startingVolume.asStateFlow()
+
+    // TODO: Add headphone detection state
+    // private val _isHeadphonesConnected = MutableStateFlow(false)
+    // val isHeadphonesConnected: StateFlow<Boolean> = _isHeadphonesConnected.asStateFlow()
+
+    // ─────────────────────────────────────────────────────────────────
+    // Internal state
+    // ─────────────────────────────────────────────────────────────────
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var recorder: AudioRecord? = null
+
+    @Volatile private var currentMaskingVolume = 0f
+    private var running = false
+
+    // White noise playback
+    private var audioTrack: AudioTrack? = null
+    private var noiseThread: Thread? = null
+    private val isNoiseThreadRunning = AtomicBoolean(false)
+
+    inner class LocalBinder : Binder() {
+        fun getService(): NoiseMonitorService = this@NoiseMonitorService
+    }
+
+    private val binder = LocalBinder()
+
+    // ─────────────────────────────────────────────────────────────────
+    // Lifecycle
+    // ─────────────────────────────────────────────────────────────────
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+        initAudioTrack()
+
+        // TODO: Register headphone detection callback
+        // val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        // audioManager.registerAudioDeviceCallback(headphoneCallback, null)
+    }
+
+    override fun onBind(intent: Intent): IBinder = binder
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(NOTIFICATION_ID, buildNotification())
+        startRecording()
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        stopRecording()
+        releaseAudioTrack()
+
+        // TODO: Unregister headphone callback
+        // val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        // audioManager.unregisterAudioDeviceCallback(headphoneCallback)
+
+        super.onDestroy()
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // White noise playback — called from MonitorScreen
+    // ─────────────────────────────────────────────────────────────────
+
+    fun startWhiteNoise() {
+        if (isNoiseThreadRunning.get()) return
+        isNoiseThreadRunning.set(true)
+        _isPlaying.value = true
+
+        val bufSize = maxOf(
+            AudioTrack.getMinBufferSize(
+                SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+            ), 4096
+        )
+        val noiseBuf = ShortArray(bufSize / 2)
+
+        noiseThread = Thread {
+            while (isNoiseThreadRunning.get()) {
+                for (i in noiseBuf.indices) {
+                    noiseBuf[i] = Random.nextInt(-16384, 16384).toShort()
+                }
+                audioTrack?.write(noiseBuf, 0, noiseBuf.size)
+            }
+        }.apply { start() }
+
+        // Apply current volume immediately so sound starts at the right level
+        audioTrack?.setVolume(currentMaskingVolume.coerceAtLeast(_startingVolume.value))
+    }
+
+    fun stopWhiteNoise() {
+        if (!isNoiseThreadRunning.get()) return
+        isNoiseThreadRunning.set(false)
+        // Do not join here — this may be called from the main thread (button click).
+        // The thread will exit on its own once the flag is false.
+        noiseThread = null
+        audioTrack?.setVolume(0f)
+        _isPlaying.value = false
+    }
+
+    fun setStartingVolume(volume: Float) {
+        // TODO: Apply headphone-specific volume cap here
+        // val maxVolume = if (_isHeadphonesConnected.value) 0.7f else 1.0f
+        // _startingVolume.value = volume.coerceIn(0f, maxVolume)
+
+        _startingVolume.value = volume.coerceIn(0f, 1f)
+
+        if (currentMaskingVolume < volume) {
+            currentMaskingVolume = volume
+            if (_isPlaying.value) audioTrack?.setVolume(currentMaskingVolume)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Recording + monitoring
+    // ─────────────────────────────────────────────────────────────────
+
+    fun startRecording() {
+        if (running) return
+        running = true
+        _isRecording.value = true
+        _soundEvents.value = emptyList()
+
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CalmSpace::NoiseMonitor")
+        wakeLock?.acquire(10 * 60 * 60 * 1000L)
+
+        Thread {
+            val sampleRate  = 16000
+            val minBufBytes = AudioRecord.getMinBufferSize(
+                sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+            )
+            val bufSizeBytes  = minBufBytes
+            val bufSizeShorts = bufSizeBytes / 2
+
+            try {
+                recorder = AudioRecord(
+                    MediaRecorder.AudioSource.UNPROCESSED,
+                    sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSizeBytes
+                )
+                if (recorder?.state != AudioRecord.STATE_INITIALIZED) {
+                    recorder?.release()
+                    recorder = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSizeBytes
+                    )
+                }
+                if (recorder?.state != AudioRecord.STATE_INITIALIZED) {
+                    _statusMessage.value = "Error: mic init failed"
+                    _isRecording.value = false
+                    return@Thread
+                }
+
+                recorder?.startRecording()
+                val buf = ShortArray(bufSizeShorts)
+
+                // ── Phase 1: Silent calibration ──
+                var baselineSum = 0.0
+                var baselineSamples = 0
+                val phase1Start = System.currentTimeMillis()
+
+                while (running && System.currentTimeMillis() - phase1Start < SILENT_CALIBRATION_MS) {
+                    val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
+                    if (read > 0) {
+                        val db = rmsToDb(buf, read)
+                        baselineSum += db
+                        baselineSamples++
+                        _currentDb.value = db
+                        _statusMessage.value = "Step 1/3 — measuring room: ${db.toInt()} dB (stay quiet)"
+                    }
+                }
+
+                if (!running) return@Thread
+
+                val baselineDb = if (baselineSamples > 0)
+                    (baselineSum / baselineSamples).toFloat().coerceIn(20f, 70f)
+                else 40f
+                _baselineDb.value = baselineDb
+
+                // ── Phase 2: White noise calibration ──
+                // White noise starts here — service knows it's in this phase
+                val startVol = _startingVolume.value
+                currentMaskingVolume = startVol
+                audioTrack?.setVolume(currentMaskingVolume)
+                startWhiteNoise()
+
+                var wnSum = 0.0
+                var wnSamples = 0
+                val phase2Start = System.currentTimeMillis()
+
+                while (running && System.currentTimeMillis() - phase2Start < WN_CALIBRATION_MS) {
+                    val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
+                    if (read > 0) {
+                        val db = rmsToDb(buf, read)
+                        wnSum += db
+                        wnSamples++
+                        _currentDb.value = db
+                        _statusMessage.value = "Step 2/3 — measuring white noise level..."
+                    }
+                }
+
+                if (!running) return@Thread
+
+                var triggerLevel = if (wnSamples > 0)
+                    (wnSum / wnSamples).toFloat().coerceIn(baselineDb, 80f)
+                else baselineDb + 3f
+
+                _statusMessage.value = "Monitoring (trigger: >${triggerLevel.toInt()} dB)"
+
+                // ── Phase 3: Monitoring ──
+                val sessionStart  = phase1Start
+                val detectedEvents = mutableListOf<SoundEvent>()
+                var inEvent        = false
+                var eventStartTime = 0L
+                var eventPeakDb    = 0f
+                var lastAboveThreshold = 0L
+                var lastUiUpdate   = 0L
+                val eventThreshold = triggerLevel + 5f
+                var smoothedDb = triggerLevel
+
+                while (running) {
+                    val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
+                    if (read > 0) {
+                        val latestDb = rmsToDb(buf, read)
+                        smoothedDb = smoothedDb * 0.7f + latestDb * 0.3f
+
+                        val excess = latestDb - triggerLevel
+                        val floor  = _startingVolume.value
+
+                        val targetVolume = if (excess > 0) {
+                            val t = (excess / 30f).coerceIn(0f, 1f)
+                            (floor + sqrt(t) * (1f - floor)).coerceIn(floor, 1f)
+                        } else {
+                            floor
+                        }
+
+                        // TODO: Apply headphone volume cap
+                        // val maxVol = if (_isHeadphonesConnected.value) 0.7f else 1.0f
+                        // val cappedTarget = targetVolume.coerceAtMost(maxVol)
+
+                        currentMaskingVolume = if (targetVolume > currentMaskingVolume) {
+                            (currentMaskingVolume * ATTACK_SMOOTHING + targetVolume * (1f - ATTACK_SMOOTHING))
+                                .coerceIn(floor, 1f)
+                        } else {
+                            (currentMaskingVolume * DECAY_SMOOTHING + targetVolume * (1f - DECAY_SMOOTHING))
+                                .coerceAtLeast(floor)
+                        }
+
+                        // Apply volume directly — no need to route through the screen
+                        if (_isPlaying.value) {
+                            audioTrack?.setVolume(currentMaskingVolume)
+                        }
+
+                        if (!inEvent && excess <= 0) {
+                            triggerLevel = (triggerLevel * 0.9995f + smoothedDb * 0.0005f)
+                                .coerceIn(baselineDb, 80f)
+                        }
+
+                        // Sound event detection
+                        val now = System.currentTimeMillis()
+                        if (latestDb >= eventThreshold) {
+                            if (!inEvent) {
+                                inEvent = true
+                                eventStartTime = now
+                                eventPeakDb = latestDb
+                            } else if (latestDb > eventPeakDb) {
+                                eventPeakDb = latestDb
+                            }
+                            lastAboveThreshold = now
+                        } else if (inEvent && (now - lastAboveThreshold) >= QUIET_TIMEOUT_MS) {
+                            detectedEvents.add(SoundEvent(
+                                offsetMs  = eventStartTime - sessionStart,
+                                peakDb    = eventPeakDb,
+                                durationMs = lastAboveThreshold - eventStartTime
+                            ))
+                            inEvent = false
+                        }
+
+                        if (now - lastUiUpdate >= 100) {
+                            _currentDb.value     = latestDb
+                            _statusMessage.value =
+                                "ambient: ${latestDb.toInt()} dB | mask: ${(currentMaskingVolume * 100).toInt()}%"
+                            lastUiUpdate = now
+                        }
+                    }
+                }
+
+                if (inEvent) {
+                    detectedEvents.add(SoundEvent(
+                        offsetMs   = eventStartTime - sessionStart,
+                        peakDb     = eventPeakDb,
+                        durationMs = lastAboveThreshold - eventStartTime
+                    ))
+                }
+                _soundEvents.value = detectedEvents
+
+            } finally {
+                recorder?.stop()
+                recorder?.release()
+                recorder = null
+                wakeLock?.release()
+                wakeLock = null
+                _isRecording.value = false
+                _statusMessage.value = if (_soundEvents.value.isEmpty())
+                    "Stopped — no sounds detected"
+                else
+                    "Stopped — ${_soundEvents.value.size} sound(s) detected"
+            }
+        }.start()
+    }
+
+    fun stopRecording() {
+        running = false
+        stopWhiteNoise()
+        // Do not call recorder?.stop() here — the recording thread's finally block
+        // handles its own cleanup. Calling stop() from two threads races and throws
+        // IllegalStateException.
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Audio utilities
+    // ─────────────────────────────────────────────────────────────────
+
+    private fun initAudioTrack() {
+        val bufSize = maxOf(
+            AudioTrack.getMinBufferSize(
+                SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+            ), 4096
+        )
+        audioTrack = AudioTrack(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build(),
+            AudioFormat.Builder()
+                .setSampleRate(SAMPLE_RATE)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build(),
+            bufSize,
+            AudioTrack.MODE_STREAM,
+            AudioManager.AUDIO_SESSION_ID_GENERATE
+        )
+        audioTrack?.setVolume(0f)
+        audioTrack?.play()
+    }
+
+    private fun releaseAudioTrack() {
+        isNoiseThreadRunning.set(false)
+        noiseThread = null
+        audioTrack?.stop()
+        audioTrack?.release()
+        audioTrack = null
+        _isPlaying.value = false
+    }
+
+    private fun rmsToDb(buf: ShortArray, count: Int): Float {
+        var sumOfSquares = 0.0
+        for (i in 0 until count) {
+            val s = buf[i].toDouble()
+            sumOfSquares += s * s
+        }
+        val rms = sqrt(sumOfSquares / count)
+        return if (rms > 1) (20 * log10(rms)).toFloat().coerceIn(0f, 100f) else 0f
+    }
+
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID, "Noise Monitor", NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "CalmSpace is monitoring ambient noise"
+            setSound(null, null)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    private fun buildNotification(): Notification {
+        return Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("CalmSpace")
+            .setContentText("Monitoring and masking ambient noise...")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setOngoing(true)
+            .build()
+    }
+
+    // TODO: Headphone detection callback
+    /*
+    private val headphoneCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            addedDevices.forEach { device ->
+                if (device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+                    _isHeadphonesConnected.value = true
+                    // TODO: Implement safety fade-in
+                    // - Store current volume
+                    // - Set volume to 0
+                    // - Gradually increase to stored volume over 1-2 seconds
+                }
+            }
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            removedDevices.forEach { device ->
+                if (device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+                    _isHeadphonesConnected.value = false
+                    // Optionally pause playback when headphones removed
+                }
+            }
+        }
+    }
+    */
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Data Models
+// ─────────────────────────────────────────────────────────────────────
+
+data class SoundEvent(
+    val offsetMs: Long,
+    val peakDb: Float,
+    val durationMs: Long
+)
+
+fun formatOffset(ms: Long): String {
+    val totalSec = ms / 1000
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return if (min > 0) "${min}m ${sec}s in" else "${sec}s in"
+}
+
+fun formatDuration(ms: Long): String {
+    return if (ms < 1000) "${ms}ms" else "${"%.1f".format(ms / 1000f)}s"
+}
