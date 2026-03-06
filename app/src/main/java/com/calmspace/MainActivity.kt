@@ -1,6 +1,12 @@
 package com.calmspace
 
 import android.os.Bundle
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -8,6 +14,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -23,7 +32,23 @@ import com.calmspace.ui.screens.MonitorScreen
 import com.calmspace.ui.screens.PrivacyPolicyScreen
 import com.calmspace.ui.screens.ProfileScreen
 import com.calmspace.ui.screens.SettingsScreen
+import com.calmspace.ui.player.PlaybackTrack
+import com.calmspace.ui.player.PlaybackTrackOption
+import com.calmspace.ui.player.PrecomputedPlaybackTracks
+import com.calmspace.ui.player.mediaPlayerScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.math.log10
+import kotlin.math.sqrt
 
 // ─────────────────────────────────────────────
 // Route Constants
@@ -38,6 +63,7 @@ object Routes {
     const val MONITOR = "monitor"
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
+    const val PRIVACY_POLICY = "privacy_policy"
     const val MEDIA_PLAYER = "media_player"
     const val YAMNET_POC = "yamnet_poc"
 }
@@ -450,5 +476,87 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun stopMicrophoneVisualizer() {
+        micCaptureJob?.cancel()
+        micCaptureJob = null
+
+        micAudioRecord?.let { recorder ->
+            try {
+                recorder.stop()
+            } catch (_: IllegalStateException) {
+            }
+            recorder.release()
+        }
+        micAudioRecord = null
+        isMicRunningState.value = false
+        micLevelsState.value = emptyLevels()
+        micDbfsState.value = VISUALIZER_DB_FLOOR
+    }
+
+    // --- Shared visualizer helpers ---
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun sampleTrackDbfsAtPosition(
+        track: PlaybackTrack,
+        positionMs: Long,
+        durationMs: Long
+    ): Float {
+        val levels = track.envelopeDbfsLevels
+        if (levels.isEmpty()) return VISUALIZER_DB_FLOOR
+        val safeDurationMs = durationMs.coerceAtLeast((track.envelopeHopMs * levels.size).toLong())
+        val wrappedPositionMs = ((positionMs % safeDurationMs) + safeDurationMs) % safeDurationMs
+        val positionInBins = wrappedPositionMs.toDouble() / track.envelopeHopMs.toDouble()
+        val baseIndex = (positionInBins.toInt() % levels.size).coerceAtLeast(0)
+        val nextIndex = (baseIndex + 1) % levels.size
+        val fraction = (positionInBins - baseIndex).toFloat().coerceIn(0f, 1f)
+        return lerp(levels[baseIndex], levels[nextIndex], fraction)
+    }
+
+    private fun calculateMicrophoneLevel(buffer: ShortArray, samplesRead: Int): Float {
+        var sumSquares = 0.0
+        for (i in 0 until samplesRead) {
+            val value = buffer[i].toDouble()
+            sumSquares += value * value
+        }
+        val rms = sqrt(sumSquares / samplesRead)
+        return (rms / 32767.0).toFloat().coerceIn(0f, 1f)
+    }
+
+    private fun pushLevel(history: List<Float>, level: Float): List<Float> {
+        val trimmed = if (history.size >= VISUALIZER_BAR_COUNT) history.drop(1) else history
+        return trimmed + level
+    }
+
+    private fun linearToDbfs(linear: Float): Float {
+        if (linear <= 1e-12f) return VISUALIZER_DB_FLOOR
+        val db = (20.0 * log10(linear.toDouble())).toFloat()
+        return db.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
+    }
+
+    private fun dbfsToVisualizerLevel(dbfs: Float): Float {
+        val clamped = dbfs.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
+        return ((clamped - VISUALIZER_DB_FLOOR) /
+            (VISUALIZER_DB_CEILING - VISUALIZER_DB_FLOOR)).coerceIn(0f, 1f)
+    }
+
+    private fun lerp(start: Float, end: Float, fraction: Float): Float {
+        return start + (end - start) * fraction
+    }
+
+    private fun emptyLevels(): List<Float> = List(VISUALIZER_BAR_COUNT) { 0f }
+
+    override fun onDestroy() {
+        stopMicrophoneVisualizer()
+        stopPlaybackVisualizerSync()
+        exoPlayer?.release()
+        exoPlayer = null
+        super.onDestroy()
     }
 }
