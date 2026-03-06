@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
@@ -54,6 +55,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hasMicPermissionState.value = hasRecordAudioPermission()
+        refreshPlaybackLevelsFromSelectedTrack(0)
 
         setContent {
             CalmSpaceTheme {
@@ -81,7 +84,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.WELCOME,
+                        startDestination = Routes.MEDIA_PLAYER,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
@@ -185,6 +188,207 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
+
+                        composable(Routes.MEDIA_PLAYER) {
+                            mediaPlayerScreen(
+                                isPlaying = isLoopPlayingState.value,
+                                trackOptions = playbackTrackOptions,
+                                selectedTrackId = selectedTrackIdState.value,
+                                playerLevels = playbackLevelsState.value,
+                                playbackDbfs = playbackDbfsState.value,
+                                isMicRunning = isMicRunningState.value,
+                                micLevels = micLevelsState.value,
+                                micDbfs = micDbfsState.value,
+                                hasMicPermission = hasMicPermissionState.value,
+                                onTrackSelected = { trackId -> selectPlaybackTrack(trackId) },
+                                onTogglePlayback = { toggleLoopPlayback() },
+                                onToggleMicrophone = { toggleMicrophoneVisualizer() },
+                                onRequestMicrophonePermission = { requestMicrophonePermission() }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- ExoPlayer amplitude source (precomputed waveform) ---
+    private fun createLoopingPlayerIfNeeded() {
+        if (exoPlayer == null) {
+            exoPlayer = ExoPlayer.Builder(this).build().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                    true
+                )
+                repeatMode = Player.REPEAT_MODE_ONE
+            }
+        }
+    }
+
+    private fun selectedPlaybackTrack() = PrecomputedPlaybackTracks.findById(selectedTrackIdState.value)
+
+    private fun selectPlaybackTrack(trackId: String) {
+        if (trackId == selectedTrackIdState.value) return
+        val wasPlaying = isLoopPlayingState.value
+        selectedTrackIdState.value = trackId
+        loadedTrackId = null
+        refreshPlaybackLevelsFromSelectedTrack(0)
+
+        if (exoPlayer != null) {
+            loadSelectedTrackIntoPlayer()
+            if (wasPlaying) {
+                exoPlayer?.play()
+                startPlaybackVisualizerSync()
+            }
+        }
+    }
+
+    private fun loadSelectedTrackIntoPlayer() {
+        val track = selectedPlaybackTrack() ?: return
+        createLoopingPlayerIfNeeded()
+        if (loadedTrackId == track.id) return
+
+        exoPlayer?.apply {
+            val mediaItem = MediaItem.fromUri("android.resource://$packageName/${track.rawResId}")
+            setMediaItem(mediaItem)
+            prepare()
+            seekToDefaultPosition()
+        }
+        loadedTrackId = track.id
+    }
+
+    private fun startLoopPlayback() {
+        loadSelectedTrackIntoPlayer()
+        exoPlayer?.play()
+        isLoopPlayingState.value = true
+        startPlaybackVisualizerSync()
+    }
+
+    private fun stopLoopPlayback() {
+        exoPlayer?.pause()
+        exoPlayer?.seekToDefaultPosition()
+        isLoopPlayingState.value = false
+        stopPlaybackVisualizerSync()
+        playbackLevelsState.value = emptyLevels()
+        playbackDbfsState.value = VISUALIZER_DB_FLOOR
+    }
+
+    private fun toggleLoopPlayback() {
+        if (isLoopPlayingState.value) {
+            stopLoopPlayback()
+        } else {
+            startLoopPlayback()
+        }
+    }
+
+    private fun startPlaybackVisualizerSync() {
+        stopPlaybackVisualizerSync()
+        playbackSyncJob = lifecycleScope.launch {
+            while (isActive) {
+                val player = exoPlayer
+                val track = selectedPlaybackTrack()
+                if (player != null && track != null && player.isPlaying) {
+                    val dbfs = sampleTrackDbfsAtPosition(
+                        track = track,
+                        positionMs = player.currentPosition,
+                        durationMs = player.duration
+                    )
+                    playbackDbfsState.value = dbfs
+                    playbackLevelsState.value = pushLevel(
+                        playbackLevelsState.value,
+                        dbfsToVisualizerLevel(dbfs)
+                    )
+                }
+                awaitFrame()
+            }
+        }
+    }
+
+    private fun stopPlaybackVisualizerSync() {
+        playbackSyncJob?.cancel()
+        playbackSyncJob = null
+    }
+
+    private fun refreshPlaybackLevelsFromSelectedTrack(startIndex: Int) {
+        playbackLevelsState.value = emptyLevels()
+        playbackDbfsState.value = VISUALIZER_DB_FLOOR
+    }
+
+    // --- Microphone amplitude source ---
+    private fun requestMicrophonePermission() {
+        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun toggleMicrophoneVisualizer() {
+        if (isMicRunningState.value) {
+            stopMicrophoneVisualizer()
+        } else {
+            startMicrophoneVisualizer()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startMicrophoneVisualizer() {
+        if (isMicRunningState.value) return
+        if (!hasRecordAudioPermission()) {
+            hasMicPermissionState.value = false
+            requestMicrophonePermission()
+            return
+        }
+
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            MIC_SAMPLE_RATE_HZ,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBufferSize <= 0) return
+
+        val bufferSize = maxOf(minBufferSize, MIC_BUFFER_SIZE)
+        val recorder = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                MIC_SAMPLE_RATE_HZ,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                bufferSize
+            )
+        } catch (_: SecurityException) {
+            return
+        }
+
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
+            return
+        }
+
+        micAudioRecord = recorder
+        try {
+            recorder.startRecording()
+        } catch (_: SecurityException) {
+            recorder.release()
+            micAudioRecord = null
+            isMicRunningState.value = false
+            return
+        }
+        isMicRunningState.value = true
+
+        micCaptureJob = lifecycleScope.launch(Dispatchers.Default) {
+            val sampleBuffer = ShortArray(MIC_BUFFER_SIZE / 2)
+
+            while (isActive) {
+                val samplesRead = recorder.read(sampleBuffer, 0, sampleBuffer.size)
+                if (samplesRead > 0) {
+                    val linearLevel = calculateMicrophoneLevel(sampleBuffer, samplesRead)
+                    val micDbfs = linearToDbfs(linearLevel)
+                    runOnUiThread {
+                        micDbfsState.value = micDbfs
+                        micLevelsState.value = pushLevel(
+                            micLevelsState.value,
+                            dbfsToVisualizerLevel(micDbfs)
+                        )
                     }
                 }
             }
