@@ -75,6 +75,8 @@ class NoiseMonitorService : Service() {
         private const val ATTACK_SMOOTHING = 0.55f
         private const val DECAY_SMOOTHING  = 0.88f
         private const val SAMPLE_RATE = 44100
+        private const val VISUALIZER_UPDATE_MS = 33L
+        private const val STATUS_UPDATE_MS = 100L
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -283,7 +285,6 @@ class NoiseMonitorService : Service() {
                 val startVol = _startingVolume.value
                 currentMaskingVolume = startVol
                 audioTrack?.setVolume(currentMaskingVolume)
-                startWhiteNoise()
 
                 var wnSum = 0.0
                 var wnSamples = 0
@@ -315,7 +316,8 @@ class NoiseMonitorService : Service() {
                 var eventStartTime = 0L
                 var eventPeakDb    = 0f
                 var lastAboveThreshold = 0L
-                var lastUiUpdate   = 0L
+                var lastStatusUpdate   = 0L
+                var lastVisualizerUpdate = 0L
                 val eventThreshold = triggerLevel + 5f
                 var smoothedDb = triggerLevel
 
@@ -377,11 +379,15 @@ class NoiseMonitorService : Service() {
                             inEvent = false
                         }
 
-                        if (now - lastUiUpdate >= 100) {
-                            _currentDb.value     = latestDb
+                        if (now - lastVisualizerUpdate >= VISUALIZER_UPDATE_MS) {
+                            _currentDb.value = latestDb
+                            lastVisualizerUpdate = now
+                        }
+
+                        if (now - lastStatusUpdate >= STATUS_UPDATE_MS) {
                             _statusMessage.value =
                                 "ambient: ${latestDb.toInt()} dB | mask: ${(currentMaskingVolume * 100).toInt()}%"
-                            lastUiUpdate = now
+                            lastStatusUpdate = now
                         }
                     }
                 }

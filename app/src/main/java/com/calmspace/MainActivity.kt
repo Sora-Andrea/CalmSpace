@@ -1,6 +1,7 @@
 package com.calmspace
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
         private const val MIC_BUFFER_SIZE = 2048
         private const val VISUALIZER_DB_FLOOR = -80f
         private const val VISUALIZER_DB_CEILING = 0f
+        private const val PLAYBACK_VISUALIZER_UPDATE_MS = 33L
     }
 
     private var exoPlayer: ExoPlayer? = null
@@ -229,6 +231,13 @@ class MainActivity : ComponentActivity() {
                         // ───────── Monitor Screen ─────────
                         composable(Routes.MONITOR) {
                             val selectedMonitorTrackIdState = remember { mutableStateOf("white_noise") }
+                            val isMonitoringSessionActiveState = remember { mutableStateOf(false) }
+                            val exoTrackIds = remember(playbackTrackOptions) {
+                                playbackTrackOptions.map { it.id }.toSet()
+                            }
+                            val isServiceTrack = remember(exoTrackIds) {
+                                { trackId: String -> !exoTrackIds.contains(trackId) }
+                            }
 
                             MonitorScreen(
                                 micLevels = micLevelsState.value,
@@ -237,13 +246,20 @@ class MainActivity : ComponentActivity() {
                                     title = "White Noise"
                                 ),
                                 selectedTrackId = selectedMonitorTrackIdState.value,
+                                isServiceTrack = isServiceTrack,
+                                onMonitoringSessionStateChanged = { isMonitoring ->
+                                    isMonitoringSessionActiveState.value = isMonitoring
+                                },
                                 onTrackSelected = { trackId ->
                                     selectedMonitorTrackIdState.value = trackId
-                                    if (trackId == "white_noise") {
-                                        stopLoopPlayback()
-                                    } else {
+                                    if (!isServiceTrack(trackId)) {
+                                        val wasLoopPlaying = isLoopPlayingState.value
                                         selectedTrackIdState.value = trackId
                                         selectPlaybackTrack(trackId)
+
+                                        if (isMonitoringSessionActiveState.value && !wasLoopPlaying) {
+                                            startLoopPlayback()
+                                        }
                                     }
                                 },
                                 isTrackPlaybackPlaying = isLoopPlayingState.value,
@@ -251,17 +267,19 @@ class MainActivity : ComponentActivity() {
                                     if (isLoopPlayingState.value) {
                                         stopLoopPlayback()
                                     } else {
-                                        selectedTrackIdState.value = selectedMonitorTrackIdState.value
-                                        selectPlaybackTrack(selectedMonitorTrackIdState.value)
+                                        val selectedTrackId = selectedMonitorTrackIdState.value
+                                        selectedTrackIdState.value = selectedTrackId
+                                        selectPlaybackTrack(selectedTrackId)
                                         startLoopPlayback()
                                     }
                                 },
                                 onTrackVolumeChange = { volume ->
-                                    if (selectedMonitorTrackIdState.value != "white_noise") {
+                                    if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
                                         exoPlayer?.volume = volume
                                     }
                                 },
                                 onStopRecording = {
+                                    stopLoopPlayback()
                                     micLevelsState.value = emptyLevels()
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
                                 }
@@ -397,11 +415,13 @@ class MainActivity : ComponentActivity() {
 
     private fun startPlaybackVisualizerSync() {
         stopPlaybackVisualizerSync()
+        var lastSyncMs = 0L
         playbackSyncJob = lifecycleScope.launch {
             while (isActive) {
                 val player = exoPlayer
                 val track = selectedPlaybackTrack()
-                if (player != null && track != null && player.isPlaying) {
+                val nowMs = SystemClock.elapsedRealtime()
+                if (player != null && track != null && player.isPlaying && nowMs - lastSyncMs >= PLAYBACK_VISUALIZER_UPDATE_MS) {
                     val dbfs = sampleTrackDbfsAtPosition(
                         track = track,
                         positionMs = player.currentPosition,
@@ -412,6 +432,7 @@ class MainActivity : ComponentActivity() {
                         playbackLevelsState.value,
                         dbfsToVisualizerLevel(dbfs)
                     )
+                    lastSyncMs = nowMs
                 }
                 awaitFrame()
             }

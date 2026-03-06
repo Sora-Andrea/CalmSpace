@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -57,7 +58,9 @@ fun MonitorScreen(
     micLevels: List<Float>,
     trackOptions: List<PlaybackTrackOption>,
     selectedTrackId: String,
+    isServiceTrack: (String) -> Boolean,
     onTrackSelected: (String) -> Unit,
+    onMonitoringSessionStateChanged: (Boolean) -> Unit,
     isTrackPlaybackPlaying: Boolean,
     onToggleTrackPlayback: () -> Unit,
     onTrackVolumeChange: (Float) -> Unit,
@@ -109,14 +112,19 @@ fun MonitorScreen(
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
         launch {
+            var lastVizUpdateMs = 0L
             svc.currentDb.collect { db ->
                 currentDb = db
-                if (isVisualizerActive) {
-                    monitorLevels = pushLevel(
-                        monitorLevels,
-                        dbToVisualizerLevel(db)
-                    )
-                }
+                if (!isVisualizerActive) return@collect
+
+                val nowMs = SystemClock.elapsedRealtime()
+                if (nowMs - lastVizUpdateMs < 33L) return@collect
+
+                lastVizUpdateMs = nowMs
+                monitorLevels = pushLevel(
+                    monitorLevels,
+                    dbToVisualizerLevel(db)
+                )
             }
         }
         launch { svc.soundEvents.collect    { soundEvents    = it } }
@@ -130,6 +138,7 @@ fun MonitorScreen(
     }
 
     LaunchedEffect(isRecording) {
+        onMonitoringSessionStateChanged(isRecording)
         isVisualizerActive = isRecording
         if (!isRecording) {
             monitorLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
@@ -154,6 +163,23 @@ fun MonitorScreen(
         if (isGranted) {
             isVisualizerActive = true
             context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
+            if (isServiceTrack(selectedTrackId)) {
+                if (!isWhiteNoisePlaying) {
+                    service?.startWhiteNoise()
+                }
+            } else if (!isTrackPlaybackPlaying) {
+                onToggleTrackPlayback()
+            }
+        }
+    }
+
+    val startAmbientTrackForSelection = {
+        if (isServiceTrack(selectedTrackId)) {
+            if (!isWhiteNoisePlaying) {
+                service?.startWhiteNoise()
+            }
+        } else if (!isTrackPlaybackPlaying) {
+            onToggleTrackPlayback()
         }
     }
 
@@ -241,11 +267,22 @@ fun MonitorScreen(
         AudioPlayerCard(
             trackOptions = trackOptions,
             selectedTrackId = selectedTrackId,
-            isPlaying = if (selectedTrackId == "white_noise") isWhiteNoisePlaying else isTrackPlaybackPlaying,
+            isPlaying = if (isServiceTrack(selectedTrackId)) isWhiteNoisePlaying else isTrackPlaybackPlaying,
             volume = startingVolume,
-            onTrackSelected = onTrackSelected,
+            onTrackSelected = { trackId ->
+                val wasServiceTrack = isServiceTrack(selectedTrackId)
+                val isServiceTrackSelection = isServiceTrack(trackId)
+
+                if (wasServiceTrack && !isServiceTrackSelection && isWhiteNoisePlaying) {
+                    service?.stopWhiteNoise()
+                }
+                if (!wasServiceTrack && isServiceTrackSelection && isTrackPlaybackPlaying) {
+                    onToggleTrackPlayback()
+                }
+                onTrackSelected(trackId)
+            },
             onTogglePlayback = {
-                if (selectedTrackId == "white_noise") {
+                if (isServiceTrack(selectedTrackId)) {
                     if (isWhiteNoisePlaying) service?.stopWhiteNoise()
                     else service?.startWhiteNoise()
                 } else {
@@ -253,7 +290,7 @@ fun MonitorScreen(
                 }
             },
             onVolumeChange = { volume ->
-                if (selectedTrackId == "white_noise") {
+                if (isServiceTrack(selectedTrackId)) {
                     service?.setStartingVolume(volume)
                 } else {
                     onTrackVolumeChange(volume)
@@ -275,6 +312,7 @@ fun MonitorScreen(
                     if (hasAudioPermission) {
                         isVisualizerActive = true
                         context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
+                        startAmbientTrackForSelection()
                     } else {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
