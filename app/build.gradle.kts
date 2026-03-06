@@ -52,6 +52,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("org.tensorflow:tensorflow-lite-task-audio:0.4.4")
     
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
