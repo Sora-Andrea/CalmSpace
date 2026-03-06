@@ -1,11 +1,5 @@
 package com.calmspace
 
-import android.Manifest
-import android.annotation.SuppressLint
-import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,14 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
-import androidx.compose.runtime.mutableStateOf
-import androidx.core.content.ContextCompat
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -33,20 +19,10 @@ import com.calmspace.ui.components.BottomNavigationBar
 import com.calmspace.ui.onboarding.QuestionnaireScreen
 import com.calmspace.ui.screens.HomeScreen
 import com.calmspace.ui.screens.MonitorScreen
+import com.calmspace.ui.screens.PrivacyPolicyScreen
 import com.calmspace.ui.screens.ProfileScreen
 import com.calmspace.ui.screens.SettingsScreen
-import com.calmspace.ui.player.PlaybackTrackOption
-import com.calmspace.ui.player.PlaybackTrack
-import com.calmspace.ui.player.PrecomputedPlaybackTracks
-import com.calmspace.ui.player.mediaPlayerScreen
 import com.calmspace.ui.theme.CalmSpaceTheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.android.awaitFrame
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlin.math.log10
-import kotlin.math.sqrt
 
 // ─────────────────────────────────────────────
 // Route Constants
@@ -61,7 +37,7 @@ object Routes {
     const val MONITOR = "monitor"
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
-    const val MEDIA_PLAYER = "media_player"
+    const val PRIVACY_POLICY = "privacy_policy"
 }
 
 // ─────────────────────────────────────────────
@@ -75,44 +51,6 @@ val bottomNavRoutes = setOf(
 )
 
 class MainActivity : ComponentActivity() {
-    companion object {
-        private const val VISUALIZER_BAR_COUNT = 32
-        private const val MIC_SAMPLE_RATE_HZ = 44100
-        private const val MIC_BUFFER_SIZE = 2048
-        private const val VISUALIZER_DB_FLOOR = -80f
-        private const val VISUALIZER_DB_CEILING = 0f
-    }
-
-    private var exoPlayer: ExoPlayer? = null
-    private val isLoopPlayingState = mutableStateOf(false)
-    private val availablePlaybackTracks = PrecomputedPlaybackTracks.tracks
-    private val playbackTrackOptions = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
-    private val selectedTrackIdState = mutableStateOf(availablePlaybackTracks.firstOrNull()?.id.orEmpty())
-    private val playbackLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
-    private val playbackDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
-    private val micLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
-    private val micDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
-    private val isMicRunningState = mutableStateOf(false)
-    private val hasMicPermissionState = mutableStateOf(false)
-
-    private var playbackSyncJob: Job? = null
-    private var loadedTrackId: String? = null
-    private var micAudioRecord: AudioRecord? = null
-    private var micCaptureJob: Job? = null
-
-    private val microphonePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasMicPermissionState.value = granted
-        if (granted) {
-            try {
-                startMicrophoneVisualizer()
-            } catch (_: SecurityException) {
-                hasMicPermissionState.value = false
-                isMicRunningState.value = false
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -235,7 +173,20 @@ class MainActivity : ComponentActivity() {
 
                         // ───────── Settings Screen ─────────
                         composable(Routes.SETTINGS) {
-                            SettingsScreen()
+                            SettingsScreen(
+                                onNavigateToPrivacyPolicy = {
+                                    navController.navigate(Routes.PRIVACY_POLICY)
+                                }
+                            )
+                        }
+
+                        // ───────── Privacy Policy Screen ─────────
+                        composable(Routes.PRIVACY_POLICY) {
+                            PrivacyPolicyScreen(
+                                onBack = {
+                                    navController.popBackStack()
+                                }
+                            )
                         }
 
                         composable(Routes.MEDIA_PLAYER) {
@@ -442,87 +393,5 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun stopMicrophoneVisualizer() {
-        micCaptureJob?.cancel()
-        micCaptureJob = null
-
-        micAudioRecord?.let { recorder ->
-            try {
-                recorder.stop()
-            } catch (_: IllegalStateException) {
-            }
-            recorder.release()
-        }
-        micAudioRecord = null
-        isMicRunningState.value = false
-        micLevelsState.value = emptyLevels()
-        micDbfsState.value = VISUALIZER_DB_FLOOR
-    }
-
-    // --- Shared visualizer helpers ---
-    private fun hasRecordAudioPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun sampleTrackDbfsAtPosition(
-        track: PlaybackTrack,
-        positionMs: Long,
-        durationMs: Long
-    ): Float {
-        val levels = track.envelopeDbfsLevels
-        if (levels.isEmpty()) return VISUALIZER_DB_FLOOR
-        val safeDurationMs = durationMs.coerceAtLeast((track.envelopeHopMs * levels.size).toLong())
-        val wrappedPositionMs = ((positionMs % safeDurationMs) + safeDurationMs) % safeDurationMs
-        val positionInBins = wrappedPositionMs.toDouble() / track.envelopeHopMs.toDouble()
-        val baseIndex = (positionInBins.toInt() % levels.size).coerceAtLeast(0)
-        val nextIndex = (baseIndex + 1) % levels.size
-        val fraction = (positionInBins - baseIndex).toFloat().coerceIn(0f, 1f)
-        return lerp(levels[baseIndex], levels[nextIndex], fraction)
-    }
-
-    private fun calculateMicrophoneLevel(buffer: ShortArray, samplesRead: Int): Float {
-        var sumSquares = 0.0
-        for (i in 0 until samplesRead) {
-            val value = buffer[i].toDouble()
-            sumSquares += value * value
-        }
-        val rms = sqrt(sumSquares / samplesRead)
-        return (rms / 32767.0).toFloat().coerceIn(0f, 1f)
-    }
-
-    private fun pushLevel(history: List<Float>, level: Float): List<Float> {
-        val trimmed = if (history.size >= VISUALIZER_BAR_COUNT) history.drop(1) else history
-        return trimmed + level
-    }
-
-    private fun linearToDbfs(linear: Float): Float {
-        if (linear <= 1e-12f) return VISUALIZER_DB_FLOOR
-        val db = (20.0 * log10(linear.toDouble())).toFloat()
-        return db.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
-    }
-
-    private fun dbfsToVisualizerLevel(dbfs: Float): Float {
-        val clamped = dbfs.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
-        return ((clamped - VISUALIZER_DB_FLOOR) /
-            (VISUALIZER_DB_CEILING - VISUALIZER_DB_FLOOR)).coerceIn(0f, 1f)
-    }
-
-    private fun lerp(start: Float, end: Float, fraction: Float): Float {
-        return start + (end - start) * fraction
-    }
-
-    private fun emptyLevels(): List<Float> = List(VISUALIZER_BAR_COUNT) { 0f }
-
-    override fun onDestroy() {
-        stopMicrophoneVisualizer()
-        stopPlaybackVisualizerSync()
-        exoPlayer?.release()
-        exoPlayer = null
-        super.onDestroy()
     }
 }
