@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.MEDIA_PLAYER,
+                        startDestination = Routes.HOME,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
@@ -228,8 +228,10 @@ class MainActivity : ComponentActivity() {
                         // ───────── Monitor Screen ─────────
                         composable(Routes.MONITOR) {
                             MonitorScreen(
+                                micLevels = micLevelsState.value,
                                 onStopRecording = {
-                                    // TODO: Stop foreground service, finalize session
+                                    micLevelsState.value = emptyLevels()
+                                    micDbfsState.value = VISUALIZER_DB_FLOOR
                                 }
                             )
                         }
