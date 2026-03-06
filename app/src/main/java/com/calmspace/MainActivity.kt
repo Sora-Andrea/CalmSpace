@@ -1,6 +1,7 @@
 package com.calmspace
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
         private const val MIC_BUFFER_SIZE = 2048
         private const val VISUALIZER_DB_FLOOR = -80f
         private const val VISUALIZER_DB_CEILING = 0f
+        private const val PLAYBACK_VISUALIZER_UPDATE_MS = 33L
     }
 
     private var exoPlayer: ExoPlayer? = null
@@ -397,11 +399,13 @@ class MainActivity : ComponentActivity() {
 
     private fun startPlaybackVisualizerSync() {
         stopPlaybackVisualizerSync()
+        var lastSyncMs = 0L
         playbackSyncJob = lifecycleScope.launch {
             while (isActive) {
                 val player = exoPlayer
                 val track = selectedPlaybackTrack()
-                if (player != null && track != null && player.isPlaying) {
+                val nowMs = SystemClock.elapsedRealtime()
+                if (player != null && track != null && player.isPlaying && nowMs - lastSyncMs >= PLAYBACK_VISUALIZER_UPDATE_MS) {
                     val dbfs = sampleTrackDbfsAtPosition(
                         track = track,
                         positionMs = player.currentPosition,
@@ -412,6 +416,7 @@ class MainActivity : ComponentActivity() {
                         playbackLevelsState.value,
                         dbfsToVisualizerLevel(dbfs)
                     )
+                    lastSyncMs = nowMs
                 }
                 awaitFrame()
             }

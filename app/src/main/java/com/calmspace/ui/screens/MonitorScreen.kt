@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -109,14 +110,19 @@ fun MonitorScreen(
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
         launch {
+            var lastVizUpdateMs = 0L
             svc.currentDb.collect { db ->
                 currentDb = db
-                if (isVisualizerActive) {
-                    monitorLevels = pushLevel(
-                        monitorLevels,
-                        dbToVisualizerLevel(db)
-                    )
-                }
+                if (!isVisualizerActive) return@collect
+
+                val nowMs = SystemClock.elapsedRealtime()
+                if (nowMs - lastVizUpdateMs < 33L) return@collect
+
+                lastVizUpdateMs = nowMs
+                monitorLevels = pushLevel(
+                    monitorLevels,
+                    dbToVisualizerLevel(db)
+                )
             }
         }
         launch { svc.soundEvents.collect    { soundEvents    = it } }
@@ -243,7 +249,13 @@ fun MonitorScreen(
             selectedTrackId = selectedTrackId,
             isPlaying = if (selectedTrackId == "white_noise") isWhiteNoisePlaying else isTrackPlaybackPlaying,
             volume = startingVolume,
-            onTrackSelected = onTrackSelected,
+            onTrackSelected = { trackId ->
+                // Selecting a non WN track while WN is already playing stops the WN stream immediately.
+                if (selectedTrackId == "white_noise" && trackId != "white_noise") {
+                    service?.stopWhiteNoise()
+                }
+                onTrackSelected(trackId)
+            },
             onTogglePlayback = {
                 if (selectedTrackId == "white_noise") {
                     if (isWhiteNoisePlaying) service?.stopWhiteNoise()
