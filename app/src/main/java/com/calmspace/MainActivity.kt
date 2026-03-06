@@ -31,6 +31,7 @@ import com.calmspace.ui.authentication.SignupScreen
 import com.calmspace.ui.authentication.WelcomeScreen
 import com.calmspace.ui.components.BottomNavigationBar
 import com.calmspace.ui.onboarding.QuestionnaireScreen
+import com.calmspace.ui.ml.YamnetPocScreen
 import com.calmspace.ui.screens.HomeScreen
 import com.calmspace.ui.screens.MonitorScreen
 import com.calmspace.ui.screens.ProfileScreen
@@ -62,6 +63,7 @@ object Routes {
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
     const val MEDIA_PLAYER = "media_player"
+    const val YAMNET_POC = "yamnet_poc"
 }
 
 // ─────────────────────────────────────────────
@@ -99,12 +101,13 @@ class MainActivity : ComponentActivity() {
     private var loadedTrackId: String? = null
     private var micAudioRecord: AudioRecord? = null
     private var micCaptureJob: Job? = null
+    private var startMicVisualizerAfterPermissionGrant = false
 
     private val microphonePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasMicPermissionState.value = granted
-        if (granted) {
+        if (granted && startMicVisualizerAfterPermissionGrant) {
             try {
                 startMicrophoneVisualizer()
             } catch (_: SecurityException) {
@@ -112,6 +115,7 @@ class MainActivity : ComponentActivity() {
                 isMicRunningState.value = false
             }
         }
+        startMicVisualizerAfterPermissionGrant = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -250,9 +254,18 @@ class MainActivity : ComponentActivity() {
                                 micDbfs = micDbfsState.value,
                                 hasMicPermission = hasMicPermissionState.value,
                                 onTrackSelected = { trackId -> selectPlaybackTrack(trackId) },
+                                onOpenYamnetPoc = { navController.navigate(Routes.YAMNET_POC) },
                                 onTogglePlayback = { toggleLoopPlayback() },
                                 onToggleMicrophone = { toggleMicrophoneVisualizer() },
-                                onRequestMicrophonePermission = { requestMicrophonePermission() }
+                                onRequestMicrophonePermission = { requestMicrophonePermissionForMicVisualizer() }
+                            )
+                        }
+
+                        composable(Routes.YAMNET_POC) {
+                            YamnetPocScreen(
+                                hasMicPermission = hasMicPermissionState.value,
+                                onRequestMicrophonePermission = { requestMicrophonePermissionForYamnet() },
+                                onBack = { navController.popBackStack() }
                             )
                         }
                     }
@@ -367,7 +380,13 @@ class MainActivity : ComponentActivity() {
     }
 
     // --- Microphone amplitude source ---
-    private fun requestMicrophonePermission() {
+    private fun requestMicrophonePermissionForMicVisualizer() {
+        startMicVisualizerAfterPermissionGrant = true
+        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun requestMicrophonePermissionForYamnet() {
+        startMicVisualizerAfterPermissionGrant = false
         microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
 
@@ -384,7 +403,7 @@ class MainActivity : ComponentActivity() {
         if (isMicRunningState.value) return
         if (!hasRecordAudioPermission()) {
             hasMicPermissionState.value = false
-            requestMicrophonePermission()
+            requestMicrophonePermissionForMicVisualizer()
             return
         }
 

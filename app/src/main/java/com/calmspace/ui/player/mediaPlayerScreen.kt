@@ -43,6 +43,7 @@ fun mediaPlayerScreen(
     micDbfs: Float,
     hasMicPermission: Boolean,
     onTrackSelected: (String) -> Unit,
+    onOpenYamnetPoc: () -> Unit,
     onTogglePlayback: () -> Unit,
     onToggleMicrophone: () -> Unit,
     onRequestMicrophonePermission: () -> Unit
@@ -57,6 +58,13 @@ fun mediaPlayerScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+
+        Button(onClick = onOpenYamnetPoc) {
+            Text("Open YAMNet Classifier")
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+
         // --- ExoPlayer Visualizer ---
         Text(text = "Playback Visualizer")
 
@@ -111,7 +119,7 @@ fun mediaPlayerScreen(
             Text(text = if (isPlaying) "Stop Playback" else "Start Playback")
         }
 
-        Spacer(modifier = Modifier.height(36.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
         // --- Microphone Visualizer ---
         Text(text = "Microphone Visualizer")
@@ -126,8 +134,8 @@ fun mediaPlayerScreen(
         Text(
             text = when {
                 !hasMicPermission -> "Microphone permission required"
-                isMicRunning -> "Microphone visualizer is running"
-                else -> "Microphone visualizer is stopped"
+                isMicRunning -> "Microphone visualizer running"
+                else -> "Microphone visualizer stopped"
             }
         )
         Text(text = "Level: ${formatDbfs(micDbfs)} dBFS")
