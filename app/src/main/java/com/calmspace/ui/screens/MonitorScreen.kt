@@ -23,6 +23,7 @@ import com.calmspace.service.NoiseMonitorService
 import com.calmspace.service.SoundEvent
 import com.calmspace.ui.player.AmplitudeVisualizer
 import com.calmspace.ui.player.AmplitudeVisualizerMode
+import com.calmspace.ui.player.PlaybackTrackOption
 import com.calmspace.ui.screens.monitor.AudioPlayerCard
 import com.calmspace.ui.screens.monitor.MonitorRingsDisplay
 import com.calmspace.ui.screens.monitor.RecordingStatusPill
@@ -54,6 +55,12 @@ private const val SERVICE_RMS_DB_REFERENCE = 90f
 @Composable
 fun MonitorScreen(
     micLevels: List<Float>,
+    trackOptions: List<PlaybackTrackOption>,
+    selectedTrackId: String,
+    onTrackSelected: (String) -> Unit,
+    isTrackPlaybackPlaying: Boolean,
+    onToggleTrackPlayback: () -> Unit,
+    onTrackVolumeChange: (Float) -> Unit,
     onStopRecording: () -> Unit
 ) {
     val context = LocalContext.current
@@ -94,7 +101,7 @@ fun MonitorScreen(
     var soundEvents    by remember { mutableStateOf(emptyList<SoundEvent>()) }
     var statusMessage  by remember { mutableStateOf("Ready") }
     var isRecording    by remember { mutableStateOf(false) }
-    var isPlaying      by remember { mutableStateOf(false) }
+    var isWhiteNoisePlaying by remember { mutableStateOf(false) }
     var startingVolume by remember { mutableStateOf(0.5f) }
     var isVisualizerActive by remember { mutableStateOf(false) }
     var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
@@ -115,7 +122,7 @@ fun MonitorScreen(
         launch { svc.soundEvents.collect    { soundEvents    = it } }
         launch { svc.statusMessage.collect  { statusMessage  = it } }
         launch { svc.isRecording.collect    { isRecording    = it } }
-        launch { svc.isPlaying.collect      { isPlaying      = it } }
+        launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
         launch { svc.startingVolume.collect { startingVolume = it } }
 
         // TODO: Collect headphone state
@@ -232,14 +239,26 @@ fun MonitorScreen(
         Spacer(modifier = Modifier.height(24.dp))
         // ───────── Audio Player Card ─────────
         AudioPlayerCard(
-            soundName = "White Noise",
-            isPlaying = isPlaying,
+            trackOptions = trackOptions,
+            selectedTrackId = selectedTrackId,
+            isPlaying = if (selectedTrackId == "white_noise") isWhiteNoisePlaying else isTrackPlaybackPlaying,
             volume = startingVolume,
+            onTrackSelected = onTrackSelected,
             onTogglePlayback = {
-                if (isPlaying) service?.stopWhiteNoise()
-                else service?.startWhiteNoise()
+                if (selectedTrackId == "white_noise") {
+                    if (isWhiteNoisePlaying) service?.stopWhiteNoise()
+                    else service?.startWhiteNoise()
+                } else {
+                    onToggleTrackPlayback()
+                }
             },
-            onVolumeChange = { service?.setStartingVolume(it) }
+            onVolumeChange = { volume ->
+                if (selectedTrackId == "white_noise") {
+                    service?.setStartingVolume(volume)
+                } else {
+                    onTrackVolumeChange(volume)
+                }
+            }
         )
 
         Spacer(modifier = Modifier.weight(1f))

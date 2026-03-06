@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
@@ -227,8 +228,39 @@ class MainActivity : ComponentActivity() {
 
                         // ───────── Monitor Screen ─────────
                         composable(Routes.MONITOR) {
+                            val selectedMonitorTrackIdState = remember { mutableStateOf("white_noise") }
+
                             MonitorScreen(
                                 micLevels = micLevelsState.value,
+                                trackOptions = playbackTrackOptions + PlaybackTrackOption(
+                                    id = "white_noise",
+                                    title = "White Noise"
+                                ),
+                                selectedTrackId = selectedMonitorTrackIdState.value,
+                                onTrackSelected = { trackId ->
+                                    selectedMonitorTrackIdState.value = trackId
+                                    if (trackId == "white_noise") {
+                                        stopLoopPlayback()
+                                    } else {
+                                        selectedTrackIdState.value = trackId
+                                        selectPlaybackTrack(trackId)
+                                    }
+                                },
+                                isTrackPlaybackPlaying = isLoopPlayingState.value,
+                                onToggleTrackPlayback = {
+                                    if (isLoopPlayingState.value) {
+                                        stopLoopPlayback()
+                                    } else {
+                                        selectedTrackIdState.value = selectedMonitorTrackIdState.value
+                                        selectPlaybackTrack(selectedMonitorTrackIdState.value)
+                                        startLoopPlayback()
+                                    }
+                                },
+                                onTrackVolumeChange = { volume ->
+                                    if (selectedMonitorTrackIdState.value != "white_noise") {
+                                        exoPlayer?.volume = volume
+                                    }
+                                },
                                 onStopRecording = {
                                     micLevelsState.value = emptyLevels()
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
