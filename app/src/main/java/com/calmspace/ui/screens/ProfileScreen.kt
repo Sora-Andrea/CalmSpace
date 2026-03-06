@@ -1,5 +1,6 @@
 package com.calmspace.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -154,17 +157,7 @@ fun ProfileScreen() {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // ───── Bar Chart ─────
-                WeeklyBarChart(
-                    data = listOf(
-                        Pair("M", weeklyData[0]),
-                        Pair("T", weeklyData[1]),
-                        Pair("W", weeklyData[2]),
-                        Pair("T", weeklyData[3]),
-                        Pair("F", weeklyData[4]),
-                        Pair("S", weeklyData[5]),
-                        Pair("S", weeklyData[6])
-                    )
-                )
+                WeeklyBarChart(values = weeklyData)
             }
         }
 
@@ -356,6 +349,51 @@ fun QuestionnaireItem(
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.Gray
             )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// Weekly Bar Chart Component
+// ─────────────────────────────────────────────
+
+@Composable
+fun WeeklyBarChart(values: List<Float>) {
+    val labels = listOf("M", "T", "W", "T", "F", "S", "S")
+    val primaryColor = MaterialTheme.colorScheme.primary
+    Column {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp)
+        ) {
+            val count = values.size
+            val gapRatio = 0.3f
+            val barW = size.width / (count + (count - 1) * gapRatio)
+            val gap = barW * gapRatio
+
+            values.forEachIndexed { index, value ->
+                val left = index * (barW + gap)
+                val barHeight = size.height * value.coerceIn(0f, 1f)
+                drawRect(
+                    color = primaryColor,
+                    topLeft = Offset(left, size.height - barHeight),
+                    size = Size(barW, barHeight)
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            labels.forEach { day ->
+                Text(
+                    text = day,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
         }
     }
 }
