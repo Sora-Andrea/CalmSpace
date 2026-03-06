@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -21,10 +22,17 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.calmspace.service.NoiseMonitorService
 import com.calmspace.service.SoundEvent
+import com.calmspace.ui.player.AmplitudeVisualizer
+import com.calmspace.ui.player.AmplitudeVisualizerMode
+import com.calmspace.ui.player.PlaybackTrackOption
 import com.calmspace.ui.screens.monitor.AudioPlayerCard
 import com.calmspace.ui.screens.monitor.MonitorRingsDisplay
 import com.calmspace.ui.screens.monitor.RecordingStatusPill
 import kotlinx.coroutines.launch
+
+private const val VISUALIZER_DB_FLOOR = -80f
+private const val VISUALIZER_DB_CEILING = 0f
+private const val SERVICE_RMS_DB_REFERENCE = 90f
 
 // ─────────────────────────────────────────────────────────────────────
 // Monitor Screen
@@ -47,6 +55,13 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun MonitorScreen(
+    micLevels: List<Float>,
+    trackOptions: List<PlaybackTrackOption>,
+    selectedTrackId: String,
+    onTrackSelected: (String) -> Unit,
+    isTrackPlaybackPlaying: Boolean,
+    onToggleTrackPlayback: () -> Unit,
+    onTrackVolumeChange: (Float) -> Unit,
     onStopRecording: () -> Unit
 ) {
     val context = LocalContext.current
@@ -87,20 +102,44 @@ fun MonitorScreen(
     var soundEvents    by remember { mutableStateOf(emptyList<SoundEvent>()) }
     var statusMessage  by remember { mutableStateOf("Ready") }
     var isRecording    by remember { mutableStateOf(false) }
-    var isPlaying      by remember { mutableStateOf(false) }
+    var isWhiteNoisePlaying by remember { mutableStateOf(false) }
     var startingVolume by remember { mutableStateOf(0.5f) }
+    var isVisualizerActive by remember { mutableStateOf(false) }
+    var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
 
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
-        launch { svc.currentDb.collect      { currentDb      = it } }
+        launch {
+            var lastVizUpdateMs = 0L
+            svc.currentDb.collect { db ->
+                currentDb = db
+                if (!isVisualizerActive) return@collect
+
+                val nowMs = SystemClock.elapsedRealtime()
+                if (nowMs - lastVizUpdateMs < 33L) return@collect
+
+                lastVizUpdateMs = nowMs
+                monitorLevels = pushLevel(
+                    monitorLevels,
+                    dbToVisualizerLevel(db)
+                )
+            }
+        }
         launch { svc.soundEvents.collect    { soundEvents    = it } }
         launch { svc.statusMessage.collect  { statusMessage  = it } }
         launch { svc.isRecording.collect    { isRecording    = it } }
-        launch { svc.isPlaying.collect      { isPlaying      = it } }
+        launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
         launch { svc.startingVolume.collect { startingVolume = it } }
 
         // TODO: Collect headphone state
         // launch { svc.isHeadphonesConnected.collect { isHeadphonesConnected = it } }
+    }
+
+    LaunchedEffect(isRecording) {
+        isVisualizerActive = isRecording
+        if (!isRecording) {
+            monitorLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -119,6 +158,7 @@ fun MonitorScreen(
     ) { isGranted ->
         hasAudioPermission = isGranted
         if (isGranted) {
+            isVisualizerActive = true
             context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
         }
     }
@@ -134,6 +174,11 @@ fun MonitorScreen(
         isRecording              -> "Monitoring..."
         else                     -> "No session active"
     }
+
+    val inactiveVisualizerLevels = remember(micLevels.size) {
+        List(micLevels.size.coerceAtLeast(1)) { 0f }
+    }
+    val visualizerLevels = if (isVisualizerActive) monitorLevels else inactiveVisualizerLevels
 
     // TODO: Track actual session start time and calculate elapsed
     val sleepTime = if (isRecording) "0:00" else "8:42"
@@ -166,7 +211,17 @@ fun MonitorScreen(
         Spacer(modifier = Modifier.height(32.dp))
 
         // ───────── Decorative Rings ─────────
-        MonitorRingsDisplay()
+        Box(
+            modifier = Modifier.size(220.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            MonitorRingsDisplay()
+            AmplitudeVisualizer(
+                levels = visualizerLevels,
+                modifier = Modifier.fillMaxSize(),
+                mode = AmplitudeVisualizerMode.CIRCULAR
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -188,17 +243,34 @@ fun MonitorScreen(
         )
 
         Spacer(modifier = Modifier.height(24.dp))
-
         // ───────── Audio Player Card ─────────
         AudioPlayerCard(
-            soundName = "White Noise",
-            isPlaying = isPlaying,
+            trackOptions = trackOptions,
+            selectedTrackId = selectedTrackId,
+            isPlaying = if (selectedTrackId == "white_noise") isWhiteNoisePlaying else isTrackPlaybackPlaying,
             volume = startingVolume,
-            onTogglePlayback = {
-                if (isPlaying) service?.stopWhiteNoise()
-                else service?.startWhiteNoise()
+            onTrackSelected = { trackId ->
+                // Selecting a non WN track while WN is already playing stops the WN stream immediately.
+                if (selectedTrackId == "white_noise" && trackId != "white_noise") {
+                    service?.stopWhiteNoise()
+                }
+                onTrackSelected(trackId)
             },
-            onVolumeChange = { service?.setStartingVolume(it) }
+            onTogglePlayback = {
+                if (selectedTrackId == "white_noise") {
+                    if (isWhiteNoisePlaying) service?.stopWhiteNoise()
+                    else service?.startWhiteNoise()
+                } else {
+                    onToggleTrackPlayback()
+                }
+            },
+            onVolumeChange = { volume ->
+                if (selectedTrackId == "white_noise") {
+                    service?.setStartingVolume(volume)
+                } else {
+                    onTrackVolumeChange(volume)
+                }
+            }
         )
 
         Spacer(modifier = Modifier.weight(1f))
@@ -207,10 +279,13 @@ fun MonitorScreen(
         Button(
             onClick = {
                 if (isRecording) {
+                    isVisualizerActive = false
+                    monitorLevels = inactiveVisualizerLevels
                     service?.stopRecording()
                     onStopRecording()
                 } else {
                     if (hasAudioPermission) {
+                        isVisualizerActive = true
                         context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
                     } else {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -238,4 +313,23 @@ fun MonitorScreen(
             )
         }
     }
+}
+
+private fun dbToVisualizerLevel(dbfs: Float): Float {
+    val normalizedDb = when {
+        dbfs > 0f -> {
+            // Service emits RMS dB (approx. 0..100), not dBFS.
+            // rms is raw RMS amplitude from PCM samples (0..32767 for 16-bit signed audio)
+            // Shift by the 32767 peak reference so it aligns with microphone path.
+            dbfs - SERVICE_RMS_DB_REFERENCE
+        }
+        else -> dbfs
+    }
+    val clampedDb = normalizedDb.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
+    return ((clampedDb - VISUALIZER_DB_FLOOR) / (VISUALIZER_DB_CEILING - VISUALIZER_DB_FLOOR)).coerceIn(0f, 1f)
+}
+
+private fun pushLevel(levels: List<Float>, level: Float): List<Float> {
+    val trimmed = if (levels.isNotEmpty()) levels.drop(1) else levels
+    return trimmed + level
 }
