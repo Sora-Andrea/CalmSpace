@@ -21,18 +21,19 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.calmspace.service.NoiseMonitorService
 import com.calmspace.service.SoundEvent
+import com.calmspace.service.SoundType
 import com.calmspace.ui.screens.monitor.AudioPlayerCard
 import com.calmspace.ui.screens.monitor.MonitorRingsDisplay
 import com.calmspace.ui.screens.monitor.RecordingStatusPill
+import com.calmspace.ui.screens.monitor.SoundPickerSheet
 import kotlinx.coroutines.launch
 
 // ─────────────────────────────────────────────────────────────────────
 // Monitor Screen
 //
 // Active sleep session UI. Binds to NoiseMonitorService, which handles
-// both ambient noise monitoring and white noise playback. This screen
-// just calls service.startWhiteNoise() / stopWhiteNoise() and observes
-// the resulting isPlaying state.
+// both ambient noise monitoring and adaptive noise playback. This screen
+// calls service methods and observes resulting state.
 //
 // HEADPHONES INTEGRATION NOTES:
 // ─────────────────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ fun MonitorScreen(
     var isRecording    by remember { mutableStateOf(false) }
     var isPlaying      by remember { mutableStateOf(false) }
     var startingVolume by remember { mutableStateOf(0.5f) }
+    var selectedSound  by remember { mutableStateOf(SoundType.WHITE_NOISE) }
 
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
@@ -98,6 +100,7 @@ fun MonitorScreen(
         launch { svc.isRecording.collect    { isRecording    = it } }
         launch { svc.isPlaying.collect      { isPlaying      = it } }
         launch { svc.startingVolume.collect { startingVolume = it } }
+        launch { svc.selectedSound.collect  { selectedSound  = it } }
 
         // TODO: Collect headphone state
         // launch { svc.isHeadphonesConnected.collect { isHeadphonesConnected = it } }
@@ -121,6 +124,20 @@ fun MonitorScreen(
         if (isGranted) {
             context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Sound picker state
+    // ─────────────────────────────────────────────────────────────────
+
+    var showSoundPicker by remember { mutableStateOf(false) }
+
+    if (showSoundPicker) {
+        SoundPickerSheet(
+            selectedSound = selectedSound,
+            onSoundSelected = { service?.setSoundType(it) },
+            onDismiss = { showSoundPicker = false }
+        )
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -191,14 +208,15 @@ fun MonitorScreen(
 
         // ───────── Audio Player Card ─────────
         AudioPlayerCard(
-            soundName = "White Noise",
+            soundName = selectedSound.displayName,
             isPlaying = isPlaying,
             volume = startingVolume,
             onTogglePlayback = {
                 if (isPlaying) service?.stopWhiteNoise()
                 else service?.startWhiteNoise()
             },
-            onVolumeChange = { service?.setStartingVolume(it) }
+            onVolumeChange = { service?.setStartingVolume(it) },
+            onChangeSoundClick = { showSoundPicker = true }
         )
 
         Spacer(modifier = Modifier.weight(1f))
