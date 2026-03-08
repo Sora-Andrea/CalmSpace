@@ -16,6 +16,7 @@ import com.calmspace.ui.authentication.SignupScreen
 import com.calmspace.ui.authentication.WelcomeScreen
 import com.calmspace.ui.components.BottomNavigationBar
 import com.calmspace.ui.onboarding.QuestionnaireScreen
+import com.calmspace.ui.player.mediaPlayerScreen
 import com.calmspace.ui.screens.HomeScreen
 import com.calmspace.ui.screens.MonitorScreen
 import com.calmspace.ui.screens.PrivacyPolicyScreen
@@ -37,6 +38,7 @@ object Routes {
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
     const val PRIVACY_POLICY = "privacy_policy"
+    const val MEDIA_PLAYER = "media_player"
 }
 
 // ─────────────────────────────────────────────
@@ -175,6 +177,9 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 onNavigateToPrivacyPolicy = {
                                     navController.navigate(Routes.PRIVACY_POLICY)
+                                },
+                                onNavigateToMediaPlayer = {
+                                    navController.navigate(Routes.MEDIA_PLAYER)
                                 }
                             )
                         }
@@ -185,6 +190,25 @@ class MainActivity : ComponentActivity() {
                                 onBack = {
                                     navController.popBackStack()
                                 }
+                            )
+                        }
+
+                        // ───────── Media Player Debug Screen ─────────
+                        composable(Routes.MEDIA_PLAYER) {
+                            mediaPlayerScreen(
+                                isPlaying = false,
+                                trackOptions = emptyList(),
+                                selectedTrackId = "",
+                                playerLevels = emptyList(),
+                                playbackDbfs = -80f,
+                                isMicRunning = false,
+                                micLevels = emptyList(),
+                                micDbfs = -80f,
+                                hasMicPermission = false,
+                                onTrackSelected = {},
+                                onTogglePlayback = {},
+                                onToggleMicrophone = {},
+                                onRequestMicrophonePermission = {}
                             )
                         }
                     }

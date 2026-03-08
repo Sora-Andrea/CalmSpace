@@ -135,7 +135,8 @@ fun AudioPlayerCard(
     volume: Float,
     onTogglePlayback: () -> Unit,
     onVolumeChange: (Float) -> Unit,
-    onChangeSoundClick: () -> Unit = {}
+    onChangeSoundClick: () -> Unit = {},
+    isSessionActive: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -178,41 +179,43 @@ fun AudioPlayerCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ── Volume slider ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.VolumeDown,
-                    contentDescription = "Volume down",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            // ── Volume slider — hidden during active session (masking auto-controls volume) ──
+            if (!isSessionActive) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.VolumeDown,
+                        contentDescription = "Volume down",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                    Slider(
+                        value = volume,
+                        onValueChange = onVolumeChange,
+                        valueRange = 0.1f..1.0f,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = "Volume up",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+
+                Text(
+                    text = "${(volume * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
-                Slider(
-                    value = volume,
-                    onValueChange = onVolumeChange,
-                    valueRange = 0.1f..1.0f,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = "Volume up",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
+
+                Spacer(modifier = Modifier.height(12.dp))
             }
-
-            Text(
-                text = "${(volume * 100).toInt()}%",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             // ── Play / Pause ──
             Row(

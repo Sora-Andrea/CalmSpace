@@ -24,7 +24,8 @@ import com.calmspace.ui.components.AppIcons
 
 @Composable
 fun SettingsScreen(
-    onNavigateToPrivacyPolicy: () -> Unit = {}
+    onNavigateToPrivacyPolicy: () -> Unit = {},
+    onNavigateToMediaPlayer: () -> Unit = {}
 ) {
 
     // ─────────────────────────────────────────────
@@ -295,6 +296,13 @@ fun SettingsScreen(
             title = "Questionnaire Documentation",
             value = null,
             onClick = { }
+        )
+
+        SettingsItem(
+            icon = AppIcons.Sound,
+            title = "Media Player / Visualizer",
+            value = null,
+            onClick = onNavigateToMediaPlayer
         )
 
         // TODO: Show logout confirmation dialog

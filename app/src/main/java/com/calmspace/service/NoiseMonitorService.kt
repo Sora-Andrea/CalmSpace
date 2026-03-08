@@ -227,10 +227,9 @@ class NoiseMonitorService : Service() {
 
         _startingVolume.value = volume.coerceIn(0f, 1f)
 
-        if (currentMaskingVolume < volume) {
-            currentMaskingVolume = volume
-            if (_isPlaying.value) audioTrack?.setVolume(currentMaskingVolume)
-        }
+        // Always sync the AudioTrack so the slider gives live feedback during preview
+        currentMaskingVolume = _startingVolume.value
+        if (isNoiseThreadRunning.get()) audioTrack?.setVolume(currentMaskingVolume)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -288,7 +287,7 @@ class NoiseMonitorService : Service() {
                         baselineSum += db
                         baselineSamples++
                         _currentDb.value = db
-                        _statusMessage.value = "Step 1/3 — measuring room: ${db.toInt()} dB (stay quiet)"
+                        _statusMessage.value = "Calibrating — measuring room: ${db.toInt()} dB (stay quiet)"
                     }
                 }
 
@@ -299,35 +298,13 @@ class NoiseMonitorService : Service() {
                 else 40f
                 _baselineDb.value = baselineDb
 
-                // ── Phase 2: White noise calibration ──
-                // White noise starts here — service knows it's in this phase
-                val startVol = _startingVolume.value
-                currentMaskingVolume = startVol
+                // Phase 1 has finished — we have baselineDb for the quiet room.
+                // Now start noise and begin monitoring. Volume tracks input directly.
+                currentMaskingVolume = _startingVolume.value
                 audioTrack?.setVolume(currentMaskingVolume)
-                startWhiteNoise()
+                if (!isNoiseThreadRunning.get()) startWhiteNoise()
 
-                var wnSum = 0.0
-                var wnSamples = 0
-                val phase2Start = System.currentTimeMillis()
-
-                while (running && System.currentTimeMillis() - phase2Start < WN_CALIBRATION_MS) {
-                    val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
-                    if (read > 0) {
-                        val db = rmsToDb(buf, read)
-                        wnSum += db
-                        wnSamples++
-                        _currentDb.value = db
-                        _statusMessage.value = "Step 2/3 — measuring white noise level..."
-                    }
-                }
-
-                if (!running) return@Thread
-
-                var triggerLevel = if (wnSamples > 0)
-                    (wnSum / wnSamples).toFloat().coerceIn(baselineDb, 80f)
-                else baselineDb + 3f
-
-                _statusMessage.value = "Monitoring (trigger: >${triggerLevel.toInt()} dB)"
+                _statusMessage.value = "Monitoring"
 
                 // ── Phase 3: Monitoring ──
                 val sessionStart  = phase1Start
@@ -337,8 +314,9 @@ class NoiseMonitorService : Service() {
                 var eventPeakDb    = 0f
                 var lastAboveThreshold = 0L
                 var lastUiUpdate   = 0L
-                val eventThreshold = triggerLevel + 5f
-                var smoothedDb = triggerLevel
+                val eventThreshold = baselineDb + 10f
+                var smoothedDb = baselineDb
+                val dbRange = (80f - baselineDb).coerceAtLeast(10f)
 
                 while (running) {
                     val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
@@ -346,15 +324,12 @@ class NoiseMonitorService : Service() {
                         val latestDb = rmsToDb(buf, read)
                         smoothedDb = smoothedDb * 0.7f + latestDb * 0.3f
 
-                        val excess = latestDb - triggerLevel
-                        val floor  = _startingVolume.value
-
-                        val targetVolume = if (excess > 0) {
-                            val t = (excess / 30f).coerceIn(0f, 1f)
-                            (floor + sqrt(t) * (1f - floor)).coerceIn(floor, 1f)
-                        } else {
-                            floor
-                        }
+                        // Output tracks input: map ambient dB directly to volume.
+                        // At baseline (quiet room) → floor (slider value).
+                        // As ambient rises toward 80 dB → ramps to 1.0.
+                        val floor = _startingVolume.value
+                        val t = ((latestDb - baselineDb) / dbRange).coerceIn(0f, 1f)
+                        val targetVolume = (floor + sqrt(t) * (1f - floor)).coerceIn(floor, 1f)
 
                         // TODO: Apply headphone volume cap
                         // val maxVol = if (_isHeadphonesConnected.value) 0.7f else 1.0f
@@ -368,15 +343,12 @@ class NoiseMonitorService : Service() {
                                 .coerceAtLeast(floor)
                         }
 
-                        // Apply volume directly — no need to route through the screen
-                        if (_isPlaying.value) {
+                        // Apply volume directly — use the atomic flag, not the StateFlow,
+                        // to avoid any UI-state sync lag
+                        if (isNoiseThreadRunning.get()) {
                             audioTrack?.setVolume(currentMaskingVolume)
                         }
 
-                        if (!inEvent && excess <= 0) {
-                            triggerLevel = (triggerLevel * 0.9995f + smoothedDb * 0.0005f)
-                                .coerceIn(baselineDb, 80f)
-                        }
 
                         // Sound event detection
                         val now = System.currentTimeMillis()

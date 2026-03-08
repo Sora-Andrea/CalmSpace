@@ -10,7 +10,9 @@ import android.os.IBinder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -162,66 +164,83 @@ fun MonitorScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 24.dp)
     ) {
 
-        // ───────── Header ─────────
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // ───────── Scrollable content ─────────
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(top = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
+            // ───────── Header ─────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "CalmSpace",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                RecordingStatusPill(isRecording = isRecording)
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // ───────── Decorative Rings ─────────
+            MonitorRingsDisplay()
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ───────── Sleep Time Display ─────────
             Text(
-                text = "CalmSpace",
-                style = MaterialTheme.typography.titleMedium,
+                text = sleepTime,
+                style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold
             )
-            RecordingStatusPill(isRecording = isRecording)
+            Text(
+                text = "Sleep Time",
+                style = MaterialTheme.typography.bodyMedium,
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
+            Text(
+                text = "$ambientNoise · $lastDetected",
+                style = MaterialTheme.typography.bodySmall,
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
+            if (isRecording) {
+                Text(
+                    text = statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.ui.graphics.Color.Gray
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ───────── Audio Player Card ─────────
+            AudioPlayerCard(
+                soundName = selectedSound.displayName,
+                isPlaying = isPlaying,
+                volume = startingVolume,
+                onTogglePlayback = {
+                    if (isPlaying) service?.stopWhiteNoise()
+                    else service?.startWhiteNoise()
+                },
+                onVolumeChange = { service?.setStartingVolume(it) },
+                onChangeSoundClick = { showSoundPicker = true },
+                isSessionActive = isRecording
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // ───────── Decorative Rings ─────────
-        MonitorRingsDisplay()
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ───────── Sleep Time Display ─────────
-        Text(
-            text = sleepTime,
-            style = MaterialTheme.typography.displayMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Sleep Time",
-            style = MaterialTheme.typography.bodyMedium,
-            color = androidx.compose.ui.graphics.Color.Gray
-        )
-        Text(
-            text = "$ambientNoise · $lastDetected",
-            style = MaterialTheme.typography.bodySmall,
-            color = androidx.compose.ui.graphics.Color.Gray
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ───────── Audio Player Card ─────────
-        AudioPlayerCard(
-            soundName = selectedSound.displayName,
-            isPlaying = isPlaying,
-            volume = startingVolume,
-            onTogglePlayback = {
-                if (isPlaying) service?.stopWhiteNoise()
-                else service?.startWhiteNoise()
-            },
-            onVolumeChange = { service?.setStartingVolume(it) },
-            onChangeSoundClick = { showSoundPicker = true }
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // ───────── Start/Stop Session Button ─────────
+        // ───────── Start/Stop Session Button — always visible ─────────
         Button(
             onClick = {
                 if (isRecording) {
@@ -237,6 +256,7 @@ fun MonitorScreen(
             },
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(vertical = 16.dp)
                 .height(52.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (isRecording)
