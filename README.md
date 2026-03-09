@@ -17,9 +17,9 @@ CalmSpace is an Android application designed to help urban dwellers and light sl
 - **No Manual Intervention:** Adapts automatically without waking the user
 - **Privacy-First Design:** All audio processing happens locally on your device
 
-## Alpha Features (Current Sprint)
+## Beta Features (Current Sprint)
 
-The goal is that by the end of this month, CalmSpace will include:
+The goal is that by the end of March, CalmSpace will include:
 
 ### Core Features
 - **Ambient Noise Monitoring:** Continuous background monitoring of decibel levels
