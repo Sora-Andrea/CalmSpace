@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://www.android.com)
 [![Kotlin](https://img.shields.io/badge/Language-Kotlin-purple.svg)](https://kotlinlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status](https://img.shields.io/badge/Status-PreAlpha-orange.svg)](https://github.com/Sora-Andrea/CalmSpace)
+[![Status](https://img.shields.io/badge/Status-Alpha-orange.svg)](https://github.com/Sora-Andrea/CalmSpace)
 
 > An adaptive, privacy-focused sleep aid that automatically adjusts to your environment
 
@@ -23,13 +23,15 @@ The goal is that by the end of this month, CalmSpace will include:
 
 ### Core Features
 - **Ambient Noise Monitoring:** Continuous background monitoring of decibel levels
-- **Adaptive Sound Mixing:** Automatically adjusts volume of selected soundscapes based on environmental noise
+- **Ambient Noise Visualization:** Visualization that displays the current ambient noise decibel level and disruptiveness category.
+- **Adaptive Sound Mixing:** Automatically adjusts volume of selected soundscapes based on decibel level and disruptiveness of type of sound.
 - **Basic Sound Library:** 5+ high-quality soundscapes (rain, white noise, brown noise, forest, ocean)
-- **Sleep Timer & Scheduling:** Set duration or scheduled sleep windows
+- **External Audio File Importing:** Users will be able to import their own audio files for the app to play and automatically adjust.
+- **Sleep Timer & Scheduling:** Set duration for scheduled sleep windows
 
 ### AI/ML Components
-- **Noise Classification Model:** TensorFlow Lite model that classifies common disruptive sounds (snoring, traffic, voices, appliances)
-- **Disruptive sounds record:** Suggests optimal soundscape combinations based on your environment history
+- **Pretrained Sound Classification Model:** YAMNet model that classifies common sounds (521 classes)
+- **Audio Event Disruption Classification:** YAMNet outputs will be grouped into one of roughly a dozen buckets(10-20) by disruptiveness of type of sound.
 
 ### UI/UX
 - **Introduction/Setup for new users** 
@@ -52,10 +54,8 @@ The goal is that by the end of this month, CalmSpace will include:
 - **Sound Library:** Local assets (≤50MB initial size)
 
 ### AI & Machine Learning
-- **Framework:** TensorFlow Lite (on-device)
-- **Model:** Custom quantized CNN for audio classification (≤40MB)
-- **Training Data:** UrbanSound8K dataset + custom recordings
-- **Training Tools:** Python, TensorFlow 2.12.0 (external pipeline)
+- **Framework:** TensorFlow 
+- **Model:** YAMNet, a pretrained DNN for audio classification
 
 ### Data & Storage
 - **Database:** Room Persistence Library (SQLite)
@@ -81,9 +81,7 @@ The goal is that by the end of this month, CalmSpace will include:
 - **Sound Library:** ≤50MB base sounds
 - **Permissions:** Microphone access required
 
-### External Data Sources
-- UrbanSound8K Dataset (CC BY 4.0) for training
-- Freesound.org API (Creative Commons) for supplemental sounds
+
 
 ## Installation
 
