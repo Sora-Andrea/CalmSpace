@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.HOME,
+                        startDestination = Routes.MEDIA_PLAYER,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
