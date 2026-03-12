@@ -14,6 +14,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -238,13 +239,43 @@ class MainActivity : ComponentActivity() {
                             val isServiceTrack = remember(exoTrackIds) {
                                 { trackId: String -> !exoTrackIds.contains(trackId) }
                             }
+                            val monitorTrackOptions = remember(playbackTrackOptions) {
+                                playbackTrackOptions + PlaybackTrackOption(
+                                    id = "white_noise",
+                                    title = "White Noise"
+                                )
+                            }
+
+                            LaunchedEffect(
+                                selectedMonitorTrackIdState.value,
+                                exoTrackIds,
+                                isMonitoringSessionActiveState.value
+                            ) {
+                                val selectedMonitorTrackId = selectedMonitorTrackIdState.value
+                                val isKnownTrack = monitorTrackOptions.any { it.id == selectedMonitorTrackId }
+                                if (!isKnownTrack) {
+                                    selectedMonitorTrackIdState.value = "white_noise"
+                                }
+
+                                val resolvedMonitorTrackId = selectedMonitorTrackIdState.value
+                                if (!isServiceTrack(resolvedMonitorTrackId) &&
+                                    selectedTrackIdState.value != resolvedMonitorTrackId
+                                ) {
+                                    selectPlaybackTrack(resolvedMonitorTrackId)
+                                }
+
+                                if (
+                                    isMonitoringSessionActiveState.value &&
+                                    !isServiceTrack(resolvedMonitorTrackId) &&
+                                    !isLoopPlayingState.value
+                                ) {
+                                    startLoopPlayback()
+                                }
+                            }
 
                             MonitorScreen(
                                 micLevels = micLevelsState.value,
-                                trackOptions = playbackTrackOptions + PlaybackTrackOption(
-                                    id = "white_noise",
-                                    title = "White Noise"
-                                ),
+                                trackOptions = monitorTrackOptions,
                                 selectedTrackId = selectedMonitorTrackIdState.value,
                                 isServiceTrack = isServiceTrack,
                                 onMonitoringSessionStateChanged = { isMonitoring ->
