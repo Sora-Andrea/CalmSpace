@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
@@ -19,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,7 +26,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.calmspace.service.SoundType
+import com.calmspace.ui.player.PlaybackTrackOption
 
 // ─────────────────────────────────────────────────────────────────────
 // Monitor Screen Components
@@ -128,16 +132,23 @@ fun MonitorRingsDisplay() {
 // TODO: Wire onChangeSoundClick to a sound library / selection screen.
 // TODO: Show "Volume capped for safety" text when headphones are connected.
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioPlayerCard(
-    soundName: String,
+    trackOptions: List<PlaybackTrackOption>,
+    selectedTrackId: String,
     isPlaying: Boolean,
     volume: Float,
+    onTrackSelected: (String) -> Unit,
     onTogglePlayback: () -> Unit,
     onVolumeChange: (Float) -> Unit,
     onChangeSoundClick: () -> Unit = {},
     isSessionActive: Boolean = false
 ) {
+    var trackMenuExpanded by remember { mutableStateOf(false) }
+    val selectedTrackTitle = trackOptions.firstOrNull { it.id == selectedTrackId }?.title
+        ?: "White Noise"
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -147,33 +158,65 @@ fun AudioPlayerCard(
             // ── Sound title + change button ──
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = "Ambient Sounds",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-                    Text(
-                        text = soundName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold
+//                Column(
+//                    modifier = Modifier.weight(1f)
+//                ) {
+//                    Text(
+//                        text = "Ambient Sounds",
+//                        style = MaterialTheme.typography.bodySmall,
+//                        color = Color.Gray
+//                    )
+//
+//                    Text(
+//                        text = selectedTrackTitle,
+//                        style = MaterialTheme.typography.bodyLarge,
+//                        fontWeight = FontWeight.Bold
+//                    )
+//
+//                    // TODO: Show headphone warning when connected
+//                    // if (isHeadphonesConnected) {
+//                    //     Text(
+//                    //         text = "Volume capped for safety",
+//                    //         style = MaterialTheme.typography.labelSmall,
+//                    //         color = MaterialTheme.colorScheme.error
+//                    //     )
+//                    // }
+//                }
+
+                ExposedDropdownMenuBox(
+                    modifier = Modifier.weight(1f),
+                    expanded = trackMenuExpanded,
+                    onExpandedChange = { trackMenuExpanded = !trackMenuExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = selectedTrackTitle,
+                        onValueChange = {},
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        readOnly = true,
+                        label = { Text("Ambient Sounds") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = trackMenuExpanded)
+                        }
                     )
 
-                    // TODO: Show headphone warning when connected
-                    // if (isHeadphonesConnected) {
-                    //     Text(
-                    //         text = "Volume capped for safety",
-                    //         style = MaterialTheme.typography.labelSmall,
-                    //         color = MaterialTheme.colorScheme.error
-                    //     )
-                    // }
-                }
-
-                IconButton(onClick = onChangeSoundClick) {
-                    Icon(Icons.Default.Add, contentDescription = "Change sound")
+                    DropdownMenu(
+                        expanded = trackMenuExpanded,
+                        onDismissRequest = { trackMenuExpanded = false }
+                    ) {
+                        trackOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.title) },
+                                onClick = {
+                                    trackMenuExpanded = false
+                                    onTrackSelected(option.id)
+                                }
+                            )
+                        }
+                    }
                 }
             }
 

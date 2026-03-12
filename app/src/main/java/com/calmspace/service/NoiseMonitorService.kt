@@ -75,6 +75,8 @@ class NoiseMonitorService : Service() {
         private const val ATTACK_SMOOTHING = 0.55f
         private const val DECAY_SMOOTHING  = 0.88f
         private const val SAMPLE_RATE = 44100
+        private const val VISUALIZER_UPDATE_MS = 33L
+        private const val STATUS_UPDATE_MS = 100L
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -298,11 +300,31 @@ class NoiseMonitorService : Service() {
                 else 40f
                 _baselineDb.value = baselineDb
 
-                // Phase 1 has finished — we have baselineDb for the quiet room.
-                // Now start noise and begin monitoring. Volume tracks input directly.
+                // ── Phase 2: Calibrate with noise playing ──
+                // Measure the mic level WITH noise running so triggerLevel reflects
+                // noise + quiet room together. Phase 3 only increases volume when
+                // ambient sounds push ABOVE this combined floor — the speaker output
+                // is effectively "calibrated out."
                 currentMaskingVolume = _startingVolume.value
                 audioTrack?.setVolume(currentMaskingVolume)
                 if (!isNoiseThreadRunning.get()) startWhiteNoise()
+
+                var wnSum = 0.0; var wnSamples = 0
+                val phase2Start = System.currentTimeMillis()
+                while (running && System.currentTimeMillis() - phase2Start < WN_CALIBRATION_MS) {
+                    val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
+                    if (read > 0) {
+                        val db = rmsToDb(buf, read)
+                        wnSum += db; wnSamples++
+                        _currentDb.value = db
+                        _statusMessage.value = "Calibrating..."
+                    }
+                }
+                if (!running) return@Thread
+
+                var triggerLevel = if (wnSamples > 0)
+                    (wnSum / wnSamples).toFloat().coerceIn(baselineDb, 80f)
+                else baselineDb + 3f
 
                 _statusMessage.value = "Monitoring"
 
@@ -313,10 +335,10 @@ class NoiseMonitorService : Service() {
                 var eventStartTime = 0L
                 var eventPeakDb    = 0f
                 var lastAboveThreshold = 0L
-                var lastUiUpdate   = 0L
-                val eventThreshold = baselineDb + 10f
-                var smoothedDb = baselineDb
-                val dbRange = (80f - baselineDb).coerceAtLeast(10f)
+                var lastStatusUpdate   = 0L
+                var lastVisualizerUpdate = 0L
+                val eventThreshold = triggerLevel + 5f
+                var smoothedDb = triggerLevel
 
                 while (running) {
                     val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
@@ -324,12 +346,17 @@ class NoiseMonitorService : Service() {
                         val latestDb = rmsToDb(buf, read)
                         smoothedDb = smoothedDb * 0.7f + latestDb * 0.3f
 
-                        // Output tracks input: map ambient dB directly to volume.
-                        // At baseline (quiet room) → floor (slider value).
-                        // As ambient rises toward 80 dB → ramps to 1.0.
-                        val floor = _startingVolume.value
-                        val t = ((latestDb - baselineDb) / dbRange).coerceIn(0f, 1f)
-                        val targetVolume = (floor + sqrt(t) * (1f - floor)).coerceIn(floor, 1f)
+                        // Excess above the calibrated noise+room floor triggers masking.
+                        // Speaker output is "calibrated out" — only real ambient sounds
+                        // push latestDb above triggerLevel.
+                        val excess = latestDb - triggerLevel
+                        val floor  = _startingVolume.value
+                        val targetVolume = if (excess > 0) {
+                            val t = (excess / 30f).coerceIn(0f, 1f)
+                            (floor + sqrt(t) * (1f - floor)).coerceIn(floor, 1f)
+                        } else {
+                            floor
+                        }
 
                         // TODO: Apply headphone volume cap
                         // val maxVol = if (_isHeadphonesConnected.value) 0.7f else 1.0f
@@ -370,11 +397,15 @@ class NoiseMonitorService : Service() {
                             inEvent = false
                         }
 
-                        if (now - lastUiUpdate >= 100) {
-                            _currentDb.value     = latestDb
+                        if (now - lastVisualizerUpdate >= VISUALIZER_UPDATE_MS) {
+                            _currentDb.value = latestDb
+                            lastVisualizerUpdate = now
+                        }
+
+                        if (now - lastStatusUpdate >= STATUS_UPDATE_MS) {
                             _statusMessage.value =
                                 "ambient: ${latestDb.toInt()} dB | mask: ${(currentMaskingVolume * 100).toInt()}%"
-                            lastUiUpdate = now
+                            lastStatusUpdate = now
                         }
                     }
                 }
