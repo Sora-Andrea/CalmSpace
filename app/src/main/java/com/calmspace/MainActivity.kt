@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.MEDIA_PLAYER,
+                        startDestination = Routes.HOME,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
@@ -305,6 +305,14 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onTrackVolumeChange = { volume ->
+                                    if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
+                                        exoPlayer?.volume = volume
+                                    }
+                                },
+                                onMaskingAutomationVolume = { volume ->
+                                    // Option A control stream from monitor service
+                                    // only drives ExoPlayer when the selected ambient
+                                    // source is microphone/asset playback.
                                     if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
                                         exoPlayer?.volume = volume
                                     }

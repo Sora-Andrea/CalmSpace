@@ -64,6 +64,7 @@ fun MonitorScreen(
     isTrackPlaybackPlaying: Boolean,
     onToggleTrackPlayback: () -> Unit,
     onTrackVolumeChange: (Float) -> Unit,
+    onMaskingAutomationVolume: (Float) -> Unit,
     onStopRecording: () -> Unit
 ) {
     val context = LocalContext.current
@@ -108,6 +109,7 @@ fun MonitorScreen(
     var startingVolume by remember { mutableStateOf(0.5f) }
     var isVisualizerActive by remember { mutableStateOf(false) }
     var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
+    val selectedTrackIdState by rememberUpdatedState(selectedTrackId)
 
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
@@ -132,9 +134,23 @@ fun MonitorScreen(
         launch { svc.isRecording.collect    { isRecording    = it } }
         launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
         launch { svc.startingVolume.collect { startingVolume = it } }
+        launch {
+            svc.automatedTargetVolume.collect { target ->
+                // Option A decision feed: only apply to ExoPlayer path.
+                // Keeps service-generated white-noise track untouched by this control loop.
+                if (!isServiceTrack(selectedTrackIdState) && isRecording) {
+                    onMaskingAutomationVolume(target)
+                }
+            }
+        }
 
         // TODO: Collect headphone state
         // launch { svc.isHeadphonesConnected.collect { isHeadphonesConnected = it } }
+    }
+
+    LaunchedEffect(service, isRecording) {
+        val svc = service ?: return@LaunchedEffect
+        svc.setMaskingAutomationEnabled(isRecording)
     }
 
     LaunchedEffect(isRecording) {
@@ -142,6 +158,25 @@ fun MonitorScreen(
         isVisualizerActive = isRecording
         if (!isRecording) {
             monitorLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
+        }
+    }
+
+    // Defensive reconciliation: keep actual playback aligned with dropdown selection
+    // when returning from other screens or recovering from state drift.
+    LaunchedEffect(
+        selectedTrackId,
+        isRecording,
+        isTrackPlaybackPlaying,
+        isWhiteNoisePlaying,
+        service
+    ) {
+        if (!isRecording) return@LaunchedEffect
+
+        val svc = service ?: return@LaunchedEffect
+        if (isServiceTrack(selectedTrackId)) {
+            if (!isWhiteNoisePlaying) svc.startWhiteNoise()
+        } else if (!isTrackPlaybackPlaying) {
+            onToggleTrackPlayback()
         }
     }
 
@@ -156,6 +191,20 @@ fun MonitorScreen(
         )
     }
 
+    // Start the selected ambient path for a monitoring session.
+    // This keeps the logic in one place: service track starts service playback,
+    // Exo track starts Exo playback.
+    val startAmbientTrackForSelection = {
+        service?.setMaskingAutomationEnabled(true)
+        if (isServiceTrack(selectedTrackId)) {
+            if (!isWhiteNoisePlaying) {
+                service?.startWhiteNoise()
+            }
+        } else if (!isTrackPlaybackPlaying) {
+            onToggleTrackPlayback()
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -163,23 +212,7 @@ fun MonitorScreen(
         if (isGranted) {
             isVisualizerActive = true
             context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
-            if (isServiceTrack(selectedTrackId)) {
-                if (!isWhiteNoisePlaying) {
-                    service?.startWhiteNoise()
-                }
-            } else if (!isTrackPlaybackPlaying) {
-                onToggleTrackPlayback()
-            }
-        }
-    }
-
-    val startAmbientTrackForSelection = {
-        if (isServiceTrack(selectedTrackId)) {
-            if (!isWhiteNoisePlaying) {
-                service?.startWhiteNoise()
-            }
-        } else if (!isTrackPlaybackPlaying) {
-            onToggleTrackPlayback()
+            startAmbientTrackForSelection()
         }
     }
 
@@ -273,11 +306,20 @@ fun MonitorScreen(
                 val wasServiceTrack = isServiceTrack(selectedTrackId)
                 val isServiceTrackSelection = isServiceTrack(trackId)
 
-                if (wasServiceTrack && !isServiceTrackSelection && isWhiteNoisePlaying) {
+                // Switching service track -> exo track: stop service playback.
+                if (wasServiceTrack && !isServiceTrackSelection) {
                     service?.stopWhiteNoise()
                 }
-                if (!wasServiceTrack && isServiceTrackSelection && isTrackPlaybackPlaying) {
-                    onToggleTrackPlayback()
+
+                // Switching exo track -> service track:
+                // stop exo and bring up selected service ambient immediately in-session.
+                if (!wasServiceTrack && isServiceTrackSelection) {
+                    if (isTrackPlaybackPlaying) {
+                        onToggleTrackPlayback()
+                    }
+                    if (isRecording) {
+                        service?.startWhiteNoise()
+                    }
                 }
                 onTrackSelected(trackId)
             },
@@ -295,6 +337,7 @@ fun MonitorScreen(
                 } else {
                     onTrackVolumeChange(volume)
                 }
+                service?.setStartingVolume(volume)
             }
         )
 
@@ -303,10 +346,13 @@ fun MonitorScreen(
         // ───────── Start/Stop Session Button ─────────
         Button(
             onClick = {
+                // NOTE for auditing:
+                // session start/stop should only gate service recording + playback here.
                 if (isRecording) {
                     isVisualizerActive = false
                     monitorLevels = inactiveVisualizerLevels
                     service?.stopRecording()
+                    service?.setMaskingAutomationEnabled(false)
                     onStopRecording()
                 } else {
                     if (hasAudioPermission) {
