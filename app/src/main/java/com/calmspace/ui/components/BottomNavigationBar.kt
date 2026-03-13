@@ -10,6 +10,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.calmspace.Routes
 
 // ─────────────────────────────────────────────
 // Bottom Navigation Bar
@@ -25,29 +26,29 @@ fun BottomNavigationBar(
     NavigationBar {
 
         NavigationBarItem(
-            selected = currentRoute == "home",
-            onClick = { onNavigate("home") },
+            selected = currentRoute == Routes.HOME,
+            onClick = { onNavigate(Routes.HOME) },
             icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
             label = { Text("Home") }
         )
 
         NavigationBarItem(
-            selected = currentRoute == "monitor",
-            onClick = { onNavigate("monitor") },
+            selected = currentRoute == Routes.MONITOR,
+            onClick = { onNavigate(Routes.MONITOR) },
             icon = { Icon(Icons.Default.GraphicEq, contentDescription = "Monitor") },
             label = { Text("Monitor") }
         )
 
         NavigationBarItem(
-            selected = currentRoute == "profile",
-            onClick = { onNavigate("profile") },
+            selected = currentRoute == Routes.PROFILE,
+            onClick = { onNavigate(Routes.PROFILE) },
             icon = { Icon(Icons.Default.Person, contentDescription = "Profile") },
             label = { Text("Profile") }
         )
 
         NavigationBarItem(
-            selected = currentRoute == "settings",
-            onClick = { onNavigate("settings") },
+            selected = currentRoute == Routes.SETTINGS,
+            onClick = { onNavigate(Routes.SETTINGS) },
             icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
             label = { Text("Settings") }
         )

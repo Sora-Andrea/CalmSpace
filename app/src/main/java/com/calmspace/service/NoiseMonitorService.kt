@@ -116,6 +116,9 @@ class NoiseMonitorService : Service() {
     private val _automatedDecisionReason = MutableStateFlow("Idle")
     val automatedDecisionReason: StateFlow<String> = _automatedDecisionReason.asStateFlow()
 
+    private val _selectedSound = MutableStateFlow(SoundType.WHITE_NOISE)
+    val selectedSound: StateFlow<SoundType> = _selectedSound.asStateFlow()
+
     // TODO: Add headphone detection state
     // private val _isHeadphonesConnected = MutableStateFlow(false)
     // val isHeadphonesConnected: StateFlow<Boolean> = _isHeadphonesConnected.asStateFlow()
@@ -135,10 +138,20 @@ class NoiseMonitorService : Service() {
 
     private var running = false
 
-    // White noise playback
+    // Noise playback
     private var audioTrack: AudioTrack? = null
     private var noiseThread: Thread? = null
     private val isNoiseThreadRunning = AtomicBoolean(false)
+
+    // Pink noise generator state (Paul Kellett's refined method)
+    private var b0 = 0.0; private var b1 = 0.0; private var b2 = 0.0
+    private var b3 = 0.0; private var b4 = 0.0; private var b5 = 0.0; private var b6 = 0.0
+
+    // Brown noise generator state
+    private var brownLast = 0.0
+
+    // Grey noise — inverse A-weighting coefficients at key bands (simplified IIR)
+    private var greyZ1 = 0.0; private var greyZ2 = 0.0
 
     inner class LocalBinder : Binder() {
         fun getService(): NoiseMonitorService = this@NoiseMonitorService
@@ -198,8 +211,9 @@ class NoiseMonitorService : Service() {
 
         noiseThread = Thread {
             while (isNoiseThreadRunning.get()) {
+                val type = _selectedSound.value
                 for (i in noiseBuf.indices) {
-                    noiseBuf[i] = Random.nextInt(-16384, 16384).toShort()
+                    noiseBuf[i] = nextSample(type)
                 }
                 audioTrack?.write(noiseBuf, 0, noiseBuf.size)
             }
@@ -217,6 +231,13 @@ class NoiseMonitorService : Service() {
         noiseThread = null
         audioTrack?.setVolume(0f)
         _isPlaying.value = false
+    }
+
+    fun setSoundType(type: SoundType) {
+        _selectedSound.value = type
+        // Reset generator state so the new sound starts clean
+        b0 = 0.0; b1 = 0.0; b2 = 0.0; b3 = 0.0; b4 = 0.0; b5 = 0.0; b6 = 0.0
+        brownLast = 0.0; greyZ1 = 0.0; greyZ2 = 0.0; lastWhiteForBlue = 0.0
     }
 
     fun setStartingVolume(volume: Float) {
@@ -256,6 +277,9 @@ class NoiseMonitorService : Service() {
             _automatedDecisionReason.value = "YAMNet automation disabled"
             _automatedTargetVolume.value = _startingVolume.value
         }
+        // Always sync the AudioTrack so the slider gives live feedback during preview
+        currentMaskingVolume = _startingVolume.value
+        if (isNoiseThreadRunning.get()) audioTrack?.setVolume(currentMaskingVolume)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -318,7 +342,7 @@ class NoiseMonitorService : Service() {
                         baselineSum += db
                         baselineSamples++
                         _currentDb.value = db
-                        _statusMessage.value = "Step 1/3 — measuring room: ${db.toInt()} dB (stay quiet)"
+                        _statusMessage.value = "Calibrating — measuring room: ${db.toInt()} dB (stay quiet)"
                     }
                 }
 
@@ -329,35 +353,34 @@ class NoiseMonitorService : Service() {
                 else 40f
                 _baselineDb.value = baselineDb
 
-                // ── Phase 2: White noise calibration ──
-                // White noise starts here — service knows it's in this phase
-                val startVol = _startingVolume.value
-                currentMaskingVolume = startVol
+                // ── Phase 2: Calibrate with noise playing ──
+                // Measure the mic level WITH noise running so triggerLevel reflects
+                // noise + quiet room together. Phase 3 only increases volume when
+                // ambient sounds push ABOVE this combined floor — the speaker output
+                // is effectively "calibrated out."
+                currentMaskingVolume = _startingVolume.value
                 audioTrack?.setVolume(currentMaskingVolume)
-                _automatedTargetVolume.value = startVol
+                if (!isNoiseThreadRunning.get()) startWhiteNoise()
+                _automatedTargetVolume.value = _startingVolume.value
 
-                var wnSum = 0.0
-                var wnSamples = 0
+                var wnSum = 0.0; var wnSamples = 0
                 val phase2Start = System.currentTimeMillis()
-
                 while (running && System.currentTimeMillis() - phase2Start < WN_CALIBRATION_MS) {
                     val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
                     if (read > 0) {
                         val db = rmsToDb(buf, read)
-                        wnSum += db
-                        wnSamples++
+                        wnSum += db; wnSamples++
                         _currentDb.value = db
-                        _statusMessage.value = "Step 2/3 — measuring white noise level..."
+                        _statusMessage.value = "Calibrating..."
                     }
                 }
-
                 if (!running) return@Thread
 
                 var triggerLevel = if (wnSamples > 0)
                     (wnSum / wnSamples).toFloat().coerceIn(baselineDb, 80f)
                 else baselineDb + 3f
 
-                _statusMessage.value = "Monitoring (trigger: >${triggerLevel.toInt()} dB)"
+                _statusMessage.value = "Monitoring"
 
                 // ── Phase 3: Monitoring ──
                 val sessionStart  = phase1Start
@@ -379,6 +402,9 @@ class NoiseMonitorService : Service() {
                         val latestDb = rmsToDb(buf, read)
                         smoothedDb = smoothedDb * 0.7f + latestDb * 0.3f
 
+                        // Excess above the calibrated noise+room floor triggers masking.
+                        // Speaker output is "calibrated out" — only real ambient sounds
+                        // push latestDb above triggerLevel.
                         val excess = latestDb - triggerLevel
                         val floor  = _startingVolume.value
 
@@ -423,15 +449,12 @@ class NoiseMonitorService : Service() {
                         // val maxVol = if (_isHeadphonesConnected.value) 0.7f else 1.0f
                         // val cappedTarget = targetVolume.coerceAtMost(maxVol)
 
-                        // Apply volume directly — no need to route through the screen
-                        if (_isPlaying.value) {
+                        // Apply volume directly — use the atomic flag, not the StateFlow,
+                        // to avoid any UI-state sync lag
+                        if (isNoiseThreadRunning.get()) {
                             audioTrack?.setVolume(currentMaskingVolume)
                         }
 
-                        if (!inEvent && excess <= 0) {
-                            triggerLevel = (triggerLevel * 0.9995f + smoothedDb * 0.0005f)
-                                .coerceIn(baselineDb, 80f)
-                        }
 
                         // Sound event detection
                         val now = System.currentTimeMillis()
@@ -591,6 +614,64 @@ class NoiseMonitorService : Service() {
         audioTrack?.release()
         audioTrack = null
         _isPlaying.value = false
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Noise generators
+    // ─────────────────────────────────────────────────────────────────
+
+    private fun nextSample(type: SoundType): Short = when (type) {
+        SoundType.WHITE_NOISE -> nextWhite()
+        SoundType.PINK_NOISE  -> nextPink()
+        SoundType.BROWN_NOISE -> nextBrown()
+        SoundType.BLUE_NOISE  -> nextBlue()
+        SoundType.GREY_NOISE  -> nextGrey()
+    }
+
+    private fun nextWhite(): Short =
+        Random.nextInt(-16384, 16384).toShort()
+
+    // Paul Kellett's refined pink noise method (1/f spectrum)
+    private var lastWhiteForBlue = 0.0
+    private fun nextPink(): Short {
+        val w = Random.nextDouble(-1.0, 1.0)
+        b0 = 0.99886 * b0 + w * 0.0555179
+        b1 = 0.99332 * b1 + w * 0.0750759
+        b2 = 0.96900 * b2 + w * 0.1538520
+        b3 = 0.86650 * b3 + w * 0.3104856
+        b4 = 0.55000 * b4 + w * 0.5329522
+        b5 = -0.7616 * b5 - w * 0.0168980
+        val pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11
+        b6 = w * 0.115926
+        return (pink * 32767.0).toInt().coerceIn(-32768, 32767).toShort()
+    }
+
+    // Brownian / red noise: leaky integrator of white noise (1/f² spectrum)
+    // Decay factor keeps the signal from drifting to the clamp boundaries,
+    // which would cause DC plateaus and audible pops/breakup.
+    private fun nextBrown(): Short {
+        val w = Random.nextDouble(-1.0, 1.0)
+        brownLast = (brownLast * 0.998 + w * 0.02).coerceIn(-1.0, 1.0)
+        return (brownLast * 32767.0).toInt().coerceIn(-32768, 32767).toShort()
+    }
+
+    // Blue noise: differentiated white noise — emphasises high frequencies
+    private fun nextBlue(): Short {
+        val w = Random.nextDouble(-1.0, 1.0)
+        val blue = (w - lastWhiteForBlue) * 0.5
+        lastWhiteForBlue = w
+        return (blue * 32767.0).toInt().coerceIn(-32768, 32767).toShort()
+    }
+
+    // Grey noise: white noise shaped by a simplified inverse A-weighting IIR
+    // to sound perceptually flat to human ears
+    private fun nextGrey(): Short {
+        val w = Random.nextDouble(-1.0, 1.0)
+        // Two-pole high-shelf boost around 2–4 kHz to compensate for ear sensitivity curve
+        val out = w + 0.97 * greyZ1 - 0.47 * greyZ2
+        greyZ2 = greyZ1
+        greyZ1 = out
+        return (out * 0.4 * 32767.0).toInt().coerceIn(-32768, 32767).toShort()
     }
 
     private fun rmsToDb(buf: ShortArray, count: Int): Float {

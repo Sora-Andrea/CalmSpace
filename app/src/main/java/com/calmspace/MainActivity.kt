@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.HOME,
+                        startDestination = Routes.WELCOME,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
@@ -275,7 +275,13 @@ class MainActivity : ComponentActivity() {
 
                             MonitorScreen(
                                 micLevels = micLevelsState.value,
-                                trackOptions = monitorTrackOptions,
+                                trackOptions = playbackTrackOptions + listOf(
+                                    PlaybackTrackOption(id = "white_noise",  title = "Bright Static"),
+                                    PlaybackTrackOption(id = "pink_noise",   title = "Balanced Rain"),
+                                    PlaybackTrackOption(id = "brown_noise",  title = "Deep Rumble"),
+                                    PlaybackTrackOption(id = "blue_noise",   title = "High Hiss"),
+                                    PlaybackTrackOption(id = "grey_noise",   title = "Neutral Static"),
+                                ),
                                 selectedTrackId = selectedMonitorTrackIdState.value,
                                 isServiceTrack = isServiceTrack,
                                 onMonitoringSessionStateChanged = { isMonitoring ->
@@ -283,12 +289,15 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onTrackSelected = { trackId ->
                                     selectedMonitorTrackIdState.value = trackId
-                                    if (!isServiceTrack(trackId)) {
-                                        val wasLoopPlaying = isLoopPlayingState.value
+                                    val wasLoopPlaying = isLoopPlayingState.value
+                                    val isGeneratedNoise = trackId in setOf("white_noise", "pink_noise", "brown_noise", "blue_noise", "grey_noise")
+                                    if (isGeneratedNoise) {
+                                        stopLoopPlayback()
+                                    } else {
                                         selectedTrackIdState.value = trackId
                                         selectPlaybackTrack(trackId)
 
-                                        if (isMonitoringSessionActiveState.value && !wasLoopPlaying) {
+                                        if (isMonitoringSessionActiveState.value && wasLoopPlaying) {
                                             startLoopPlayback()
                                         }
                                     }
@@ -321,6 +330,9 @@ class MainActivity : ComponentActivity() {
                                     stopLoopPlayback()
                                     micLevelsState.value = emptyLevels()
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
+                                    navController.navigate(Routes.HOME) {
+                                        popUpTo(Routes.MONITOR) { inclusive = true }
+                                    }
                                 }
                             )
                         }
@@ -335,6 +347,9 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 onNavigateToPrivacyPolicy = {
                                     navController.navigate(Routes.PRIVACY_POLICY)
+                                },
+                                onNavigateToMediaPlayer = {
+                                    navController.navigate(Routes.MEDIA_PLAYER)
                                 }
                             )
                         }
@@ -348,6 +363,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        // ───────── Media Player Debug Screen ─────────
                         composable(Routes.MEDIA_PLAYER) {
                             mediaPlayerScreen(
                                 isPlaying = isLoopPlayingState.value,
