@@ -11,7 +11,9 @@ import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,12 +24,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.calmspace.service.NoiseMonitorService
 import com.calmspace.service.SoundEvent
+import com.calmspace.service.SoundType
 import com.calmspace.ui.player.AmplitudeVisualizer
 import com.calmspace.ui.player.AmplitudeVisualizerMode
 import com.calmspace.ui.player.PlaybackTrackOption
 import com.calmspace.ui.screens.monitor.AudioPlayerCard
 import com.calmspace.ui.screens.monitor.MonitorRingsDisplay
 import com.calmspace.ui.screens.monitor.RecordingStatusPill
+import com.calmspace.ui.screens.monitor.SoundPickerSheet
 import kotlinx.coroutines.launch
 
 private const val VISUALIZER_DB_FLOOR = -80f
@@ -38,9 +42,8 @@ private const val SERVICE_RMS_DB_REFERENCE = 90f
 // Monitor Screen
 //
 // Active sleep session UI. Binds to NoiseMonitorService, which handles
-// both ambient noise monitoring and white noise playback. This screen
-// just calls service.startWhiteNoise() / stopWhiteNoise() and observes
-// the resulting isPlaying state.
+// both ambient noise monitoring and adaptive noise playback. This screen
+// calls service methods and observes resulting state.
 //
 // HEADPHONES INTEGRATION NOTES:
 // ─────────────────────────────────────────────────────────────────────
@@ -104,6 +107,7 @@ fun MonitorScreen(
     var isRecording    by remember { mutableStateOf(false) }
     var isWhiteNoisePlaying by remember { mutableStateOf(false) }
     var startingVolume by remember { mutableStateOf(0.5f) }
+    var selectedSound  by remember { mutableStateOf(SoundType.WHITE_NOISE) }
     var isVisualizerActive by remember { mutableStateOf(false) }
     var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
 
@@ -130,6 +134,7 @@ fun MonitorScreen(
         launch { svc.isRecording.collect    { isRecording    = it } }
         launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
         launch { svc.startingVolume.collect { startingVolume = it } }
+        launch { svc.selectedSound.collect  { selectedSound  = it } }
 
         // TODO: Collect headphone state
         // launch { svc.isHeadphonesConnected.collect { isHeadphonesConnected = it } }
@@ -164,6 +169,20 @@ fun MonitorScreen(
     }
 
     // ─────────────────────────────────────────────────────────────────
+    // Sound picker state
+    // ─────────────────────────────────────────────────────────────────
+
+    var showSoundPicker by remember { mutableStateOf(false) }
+
+    if (showSoundPicker) {
+        SoundPickerSheet(
+            selectedSound = selectedSound,
+            onSoundSelected = { service?.setSoundType(it) },
+            onDismiss = { showSoundPicker = false }
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Derived UI state
     // ─────────────────────────────────────────────────────────────────
 
@@ -190,26 +209,33 @@ fun MonitorScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 24.dp)
     ) {
 
-        // ───────── Header ─────────
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // ───────── Scrollable content ─────────
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(top = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "CalmSpace",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            RecordingStatusPill(isRecording = isRecording)
-        }
 
-        Spacer(modifier = Modifier.height(32.dp))
+            // ───────── Header ─────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "CalmSpace",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                RecordingStatusPill(isRecording = isRecording)
+            }
 
+            Spacer(modifier = Modifier.height(32.dp))
         // ───────── Decorative Rings ─────────
         Box(
             modifier = Modifier.size(220.dp),
@@ -223,59 +249,86 @@ fun MonitorScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+            // ───────── Decorative Rings ─────────
+            MonitorRingsDisplay()
 
-        // ───────── Sleep Time Display ─────────
-        Text(
-            text = sleepTime,
-            style = MaterialTheme.typography.displayMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Sleep Time",
-            style = MaterialTheme.typography.bodyMedium,
-            color = androidx.compose.ui.graphics.Color.Gray
-        )
-        Text(
-            text = "$ambientNoise · $lastDetected",
-            style = MaterialTheme.typography.bodySmall,
-            color = androidx.compose.ui.graphics.Color.Gray
-        )
+            Spacer(modifier = Modifier.height(24.dp))
 
-        Spacer(modifier = Modifier.height(24.dp))
-        // ───────── Audio Player Card ─────────
-        AudioPlayerCard(
-            trackOptions = trackOptions,
-            selectedTrackId = selectedTrackId,
-            isPlaying = if (selectedTrackId == "white_noise") isWhiteNoisePlaying else isTrackPlaybackPlaying,
-            volume = startingVolume,
-            onTrackSelected = { trackId ->
-                // Selecting a non WN track while WN is already playing stops the WN stream immediately.
-                if (selectedTrackId == "white_noise" && trackId != "white_noise") {
-                    service?.stopWhiteNoise()
-                }
-                onTrackSelected(trackId)
-            },
-            onTogglePlayback = {
-                if (selectedTrackId == "white_noise") {
-                    if (isWhiteNoisePlaying) service?.stopWhiteNoise()
-                    else service?.startWhiteNoise()
-                } else {
-                    onToggleTrackPlayback()
-                }
-            },
-            onVolumeChange = { volume ->
-                if (selectedTrackId == "white_noise") {
-                    service?.setStartingVolume(volume)
-                } else {
-                    onTrackVolumeChange(volume)
-                }
+            // ───────── Sleep Time Display ─────────
+            Text(
+                text = sleepTime,
+                style = MaterialTheme.typography.displayMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Sleep Time",
+                style = MaterialTheme.typography.bodyMedium,
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
+            Text(
+                text = "$ambientNoise · $lastDetected",
+                style = MaterialTheme.typography.bodySmall,
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
+            if (isRecording) {
+                Text(
+                    text = statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.ui.graphics.Color.Gray
+                )
             }
-        )
 
-        Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(24.dp))
 
-        // ───────── Start/Stop Session Button ─────────
+            // ───────── Audio Player Card ─────────
+            val generatedNoiseIds = setOf("white_noise", "pink_noise", "brown_noise", "blue_noise", "grey_noise")
+            val isGeneratedNoise = selectedTrackId in generatedNoiseIds
+
+            AudioPlayerCard(
+                trackOptions = trackOptions,
+                selectedTrackId = selectedTrackId,
+                isPlaying = if (isGeneratedNoise) isWhiteNoisePlaying else isTrackPlaybackPlaying,
+                volume = startingVolume,
+                onTrackSelected = { trackId ->
+                    // Switching away from a generated noise to a file track — stop the noise thread
+                    if (isGeneratedNoise && trackId !in generatedNoiseIds) {
+                        service?.stopWhiteNoise()
+                    }
+                    // Switching to a generated noise — update the sound type
+                    if (trackId in generatedNoiseIds) {
+                        service?.setSoundType(when (trackId) {
+                            "pink_noise"  -> SoundType.PINK_NOISE
+                            "brown_noise" -> SoundType.BROWN_NOISE
+                            "blue_noise"  -> SoundType.BLUE_NOISE
+                            "grey_noise"  -> SoundType.GREY_NOISE
+                            else          -> SoundType.WHITE_NOISE
+                        })
+                    }
+                    onTrackSelected(trackId)
+                },
+                onTogglePlayback = {
+                    if (isGeneratedNoise) {
+                        if (isWhiteNoisePlaying) service?.stopWhiteNoise()
+                        else service?.startWhiteNoise()
+                    } else {
+                        onToggleTrackPlayback()
+                    }
+                },
+                onVolumeChange = { volume ->
+                    if (isGeneratedNoise) {
+                        service?.setStartingVolume(volume)
+                    } else {
+                        onTrackVolumeChange(volume)
+                    }
+                },
+                onChangeSoundClick = { showSoundPicker = true },
+                isSessionActive = isRecording
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        // ───────── Start/Stop Session Button — always visible ─────────
         Button(
             onClick = {
                 if (isRecording) {
@@ -294,6 +347,7 @@ fun MonitorScreen(
             },
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(vertical = 16.dp)
                 .height(52.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (isRecording)

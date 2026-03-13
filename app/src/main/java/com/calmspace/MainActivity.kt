@@ -11,7 +11,6 @@ import android.media.MediaRecorder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
@@ -44,6 +43,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
@@ -126,8 +126,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        hasMicPermissionState.value = hasRecordAudioPermission()
-        refreshPlaybackLevelsFromSelectedTrack(0)
 
         setContent {
             CalmSpaceTheme {
@@ -155,7 +153,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.HOME,
+                        startDestination = Routes.WELCOME,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
@@ -234,14 +232,18 @@ class MainActivity : ComponentActivity() {
 
                             MonitorScreen(
                                 micLevels = micLevelsState.value,
-                                trackOptions = playbackTrackOptions + PlaybackTrackOption(
-                                    id = "white_noise",
-                                    title = "White Noise"
+                                trackOptions = playbackTrackOptions + listOf(
+                                    PlaybackTrackOption(id = "white_noise",  title = "Bright Static"),
+                                    PlaybackTrackOption(id = "pink_noise",   title = "Balanced Rain"),
+                                    PlaybackTrackOption(id = "brown_noise",  title = "Deep Rumble"),
+                                    PlaybackTrackOption(id = "blue_noise",   title = "High Hiss"),
+                                    PlaybackTrackOption(id = "grey_noise",   title = "Neutral Static"),
                                 ),
                                 selectedTrackId = selectedMonitorTrackIdState.value,
                                 onTrackSelected = { trackId ->
                                     selectedMonitorTrackIdState.value = trackId
-                                    if (trackId == "white_noise") {
+                                    val isGeneratedNoise = trackId in setOf("white_noise", "pink_noise", "brown_noise", "blue_noise", "grey_noise")
+                                    if (isGeneratedNoise) {
                                         stopLoopPlayback()
                                     } else {
                                         selectedTrackIdState.value = trackId
@@ -266,6 +268,9 @@ class MainActivity : ComponentActivity() {
                                 onStopRecording = {
                                     micLevelsState.value = emptyLevels()
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
+                                    navController.navigate(Routes.HOME) {
+                                        popUpTo(Routes.MONITOR) { inclusive = true }
+                                    }
                                 }
                             )
                         }
@@ -280,6 +285,9 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 onNavigateToPrivacyPolicy = {
                                     navController.navigate(Routes.PRIVACY_POLICY)
+                                },
+                                onNavigateToMediaPlayer = {
+                                    navController.navigate(Routes.MEDIA_PLAYER)
                                 }
                             )
                         }
@@ -293,6 +301,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        // ───────── Media Player Debug Screen ─────────
                         composable(Routes.MEDIA_PLAYER) {
                             mediaPlayerScreen(
                                 isPlaying = isLoopPlayingState.value,
