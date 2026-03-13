@@ -16,6 +16,7 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
 import com.calmspace.masking.MaskingDecisionEngine
+import com.calmspace.masking.MaskingBucket
 import com.calmspace.masking.smoothMaskingVolume
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -115,6 +116,12 @@ class NoiseMonitorService : Service() {
 
     private val _automatedDecisionReason = MutableStateFlow("Idle")
     val automatedDecisionReason: StateFlow<String> = _automatedDecisionReason.asStateFlow()
+
+    private val _currentMaskingBucket = MutableStateFlow("")
+    val currentMaskingBucket: StateFlow<String> = _currentMaskingBucket.asStateFlow()
+
+    private val _currentTopPrediction = MutableStateFlow("")
+    val currentTopPrediction: StateFlow<String> = _currentTopPrediction.asStateFlow()
 
     private val _selectedSound = MutableStateFlow(SoundType.WHITE_NOISE)
     val selectedSound: StateFlow<SoundType> = _selectedSound.asStateFlow()
@@ -589,6 +596,12 @@ class NoiseMonitorService : Service() {
 
             val decision = maskingDecisionEngine.evaluate(topPredictions, System.currentTimeMillis(), baseline)
             _automatedDecisionReason.value = "${decision.displayWinner}: ${decision.reason}"
+            _currentMaskingBucket.value = decision.displayWinner
+            _currentTopPrediction.value = if (decision.winner == MaskingBucket.UNKNOWN) {
+                ""
+            } else {
+                topPredictions.firstOrNull()?.first.orEmpty()
+            }
 
             if (decision.shouldAffectPlayback) {
                 _automatedTargetVolume.value = decision.targetVolume

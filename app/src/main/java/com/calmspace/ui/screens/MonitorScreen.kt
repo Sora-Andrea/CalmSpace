@@ -112,6 +112,8 @@ fun MonitorScreen(
     var soundEvents    by remember { mutableStateOf(emptyList<SoundEvent>()) }
     var statusMessage  by remember { mutableStateOf("Ready") }
     var isRecording    by remember { mutableStateOf(false) }
+    var currentBucket  by remember { mutableStateOf("") }
+    var topPrediction  by remember { mutableStateOf("") }
     var isWhiteNoisePlaying by remember { mutableStateOf(false) }
     var startingVolume by remember { mutableStateOf(0.5f) }
     var selectedSound  by remember { mutableStateOf(SoundType.WHITE_NOISE) }
@@ -140,6 +142,8 @@ fun MonitorScreen(
         launch { svc.soundEvents.collect    { soundEvents    = it } }
         launch { svc.statusMessage.collect  { statusMessage  = it } }
         launch { svc.isRecording.collect    { isRecording    = it } }
+        launch { svc.currentMaskingBucket.collect { currentBucket = it } }
+        launch { svc.currentTopPrediction.collect { topPrediction = it } }
         launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
         launch { svc.startingVolume.collect { startingVolume = it } }
         launch { svc.selectedSound.collect  { selectedSound  = it } }
@@ -245,12 +249,12 @@ fun MonitorScreen(
     // Derived UI state
     // ─────────────────────────────────────────────────────────────────
 
-    val ambientNoise = if (isRecording) "${currentDb.toInt()} dB" else "-- dB"
-
-    val lastDetected = when {
-        soundEvents.isNotEmpty() -> "Detected recently"
-        isRecording              -> "Monitoring..."
-        else                     -> "No session active"
+    val bucketLabel = if (isRecording) currentBucket.ifBlank { "Initializing..." } else "No session active"
+    val topPredictionText = if (isRecording) topPrediction else ""
+    val displayLine = if (topPredictionText.isBlank()) {
+        bucketLabel
+    } else {
+        "$bucketLabel · $topPredictionText"
     }
 
     val inactiveVisualizerLevels = remember(micLevels.size) {
@@ -320,7 +324,7 @@ fun MonitorScreen(
                 color = androidx.compose.ui.graphics.Color.Gray
             )
             Text(
-                text = "$ambientNoise · $lastDetected",
+                text = displayLine,
                 style = MaterialTheme.typography.bodySmall,
                 color = androidx.compose.ui.graphics.Color.Gray
             )
