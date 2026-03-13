@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Pause
@@ -44,7 +45,7 @@ import com.calmspace.ui.player.PlaybackTrackOption
 // TODO: Add headphone icon parameter when isHeadphonesConnected is implemented.
 
 @Composable
-fun RecordingStatusPill(isRecording: Boolean) {
+fun RecordingStatusPill(isRecording: Boolean, isHeadphonesConnected: Boolean = false) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -69,6 +70,15 @@ fun RecordingStatusPill(isRecording: Boolean) {
             style = MaterialTheme.typography.labelSmall,
             lineHeight = 14.sp
         )
+        if (isHeadphonesConnected) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Default.Headset,
+                contentDescription = "Headphones connected",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+        }
     }
 }
 
