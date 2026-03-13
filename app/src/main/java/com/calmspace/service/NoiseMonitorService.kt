@@ -28,6 +28,8 @@ import org.tensorflow.lite.task.audio.classifier.AudioClassifier
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.log10
 import kotlin.math.sqrt
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import kotlin.random.Random
 
 // ─────────────────────────────────────────────────────────────────────
@@ -130,9 +132,7 @@ class NoiseMonitorService : Service() {
     private val _selectedSound = MutableStateFlow(SoundType.WHITE_NOISE)
     val selectedSound: StateFlow<SoundType> = _selectedSound.asStateFlow()
 
-    // TODO: Add headphone detection state
-    // private val _isHeadphonesConnected = MutableStateFlow(false)
-    // val isHeadphonesConnected: StateFlow<Boolean> = _isHeadphonesConnected.asStateFlow()
+    val isHeadphonesConnected: StateFlow<Boolean> get() = headphoneManager.isConnected
 
     // ─────────────────────────────────────────────────────────────────
     // Internal state
@@ -174,6 +174,8 @@ class NoiseMonitorService : Service() {
 
     private val binder = LocalBinder()
 
+    private lateinit var headphoneManager: HeadphoneManager
+
     // ─────────────────────────────────────────────────────────────────
     // Lifecycle
     // ─────────────────────────────────────────────────────────────────
@@ -183,9 +185,21 @@ class NoiseMonitorService : Service() {
         createNotificationChannel()
         initAudioTrack()
 
-        // TODO: Register headphone detection callback
-        // val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        // audioManager.registerAudioDeviceCallback(headphoneCallback, null)
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        headphoneManager = HeadphoneManager(
+            audioManager = audioManager,
+            onConnected = {
+                // Android auto-routes USAGE_MEDIA to headphones automatically.
+                // Always use the phone's built-in mic for ambient detection — the headset mic
+                // is near the user's mouth/ear and misses room noise entirely.
+                // Fade in so plugging in mid-session doesn't cause a sudden loud burst.
+                if (isNoiseThreadRunning.get()) startFadeIn(currentMaskingVolume)
+            },
+            onDisconnected = {
+                // Nothing to do — mic was always on the phone mic.
+            }
+        )
+        headphoneManager.start()
     }
 
     override fun onBind(intent: Intent): IBinder = binder
@@ -205,6 +219,7 @@ class NoiseMonitorService : Service() {
         // val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         // audioManager.unregisterAudioDeviceCallback(headphoneCallback)
 
+        headphoneManager.stop()
         super.onDestroy()
     }
 
@@ -612,6 +627,32 @@ class NoiseMonitorService : Service() {
         // IllegalStateException.
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Headphone fade-in
+    // ─────────────────────────────────────────────────────────────────
+
+    // Gradually ramps audio from 0 to targetVolume over ~1.5 seconds when
+    // headphones are plugged in mid-session, to avoid a sudden loud burst.
+    private fun startFadeIn(targetVolume: Float) {
+        isFadingIn = true
+        Thread {
+            val steps = 30
+            val stepMs = 50L
+            audioTrack?.setVolume(0f)
+            for (i in 1..steps) {
+                Thread.sleep(stepMs)
+                if (!isNoiseThreadRunning.get()) {
+                    isFadingIn = false
+                    return@Thread
+                }
+                val vol = targetVolume * (i.toFloat() / steps)
+                audioTrack?.setVolume(vol)
+                currentMaskingVolume = vol
+            }
+            isFadingIn = false
+        }.start()
     }
 
     // ─────────────────────────────────────────────────────────────────

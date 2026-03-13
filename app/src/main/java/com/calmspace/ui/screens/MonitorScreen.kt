@@ -117,8 +117,10 @@ fun MonitorScreen(
     var isWhiteNoisePlaying by remember { mutableStateOf(false) }
     var startingVolume by remember { mutableStateOf(0.5f) }
     var selectedSound  by remember { mutableStateOf(SoundType.WHITE_NOISE) }
+    var isHeadphonesConnected by remember { mutableStateOf(false) }
     var isVisualizerActive by remember { mutableStateOf(false) }
     var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
+    var showHeadphoneDisconnectDialog by remember { mutableStateOf(false) }
     val selectedTrackIdState by rememberUpdatedState(selectedTrackId)
 
     LaunchedEffect(service) {
@@ -159,6 +161,16 @@ fun MonitorScreen(
 
         // TODO: Collect headphone state
         // launch { svc.isHeadphonesConnected.collect { isHeadphonesConnected = it } }
+        launch {
+            var prevConnected = false
+            svc.isHeadphonesConnected.collect { connected ->
+                if (prevConnected && !connected && isRecording) {
+                    showHeadphoneDisconnectDialog = true
+                }
+                isHeadphonesConnected = connected
+                prevConnected = connected
+            }
+        }
     }
 
     LaunchedEffect(service, isRecording) {
@@ -237,6 +249,33 @@ fun MonitorScreen(
 
     var showSoundPicker by remember { mutableStateOf(false) }
 
+    // ─────────────────────────────────────────────────────────────────
+    // Headphone disconnect dialog
+    // ─────────────────────────────────────────────────────────────────
+
+    if (showHeadphoneDisconnectDialog) {
+        AlertDialog(
+            onDismissRequest = { showHeadphoneDisconnectDialog = false },
+            title = { Text("Headphones disconnected") },
+            text = { Text("Your headphones were removed. Continue masking on speaker or stop the session?") },
+            confirmButton = {
+                TextButton(onClick = { showHeadphoneDisconnectDialog = false }) {
+                    Text("Continue on speaker")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showHeadphoneDisconnectDialog = false
+                    isVisualizerActive = false
+                    service?.stopRecording()
+                    onStopRecording()
+                }) {
+                    Text("Stop session")
+                }
+            }
+        )
+    }
+
     if (showSoundPicker) {
         SoundPickerSheet(
             selectedSound = selectedSound,
@@ -295,7 +334,10 @@ fun MonitorScreen(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                RecordingStatusPill(isRecording = isRecording)
+                RecordingStatusPill(
+                    isRecording = isRecording,
+                    isHeadphonesConnected = isHeadphonesConnected
+                )
             }
 
             Spacer(modifier = Modifier.height(32.dp))
