@@ -244,11 +244,17 @@ class MainActivity : ComponentActivity() {
                             val isServiceTrack = remember(exoTrackIds) {
                                 { trackId: String -> !exoTrackIds.contains(trackId) }
                             }
-                            val monitorTrackOptions = remember(playbackTrackOptions) {
-                                playbackTrackOptions + PlaybackTrackOption(
-                                    id = "white_noise",
-                                    title = "White Noise"
+                            val generatedNoiseTrackOptions = remember {
+                                listOf(
+                                    PlaybackTrackOption(id = "white_noise",  title = "Bright Static"),
+                                    PlaybackTrackOption(id = "pink_noise",   title = "Balanced Rain"),
+                                    PlaybackTrackOption(id = "brown_noise",  title = "Deep Rumble"),
+                                    PlaybackTrackOption(id = "blue_noise",   title = "High Hiss"),
+                                    PlaybackTrackOption(id = "grey_noise",   title = "Neutral Static"),
                                 )
+                            }
+                            val monitorTrackOptions = remember(playbackTrackOptions, generatedNoiseTrackOptions) {
+                                playbackTrackOptions + generatedNoiseTrackOptions
                             }
 
                             LaunchedEffect(
@@ -280,13 +286,7 @@ class MainActivity : ComponentActivity() {
 
                             MonitorScreen(
                                 micLevels = micLevelsState.value,
-                                trackOptions = playbackTrackOptions + listOf(
-                                    PlaybackTrackOption(id = "white_noise",  title = "Bright Static"),
-                                    PlaybackTrackOption(id = "pink_noise",   title = "Balanced Rain"),
-                                    PlaybackTrackOption(id = "brown_noise",  title = "Deep Rumble"),
-                                    PlaybackTrackOption(id = "blue_noise",   title = "High Hiss"),
-                                    PlaybackTrackOption(id = "grey_noise",   title = "Neutral Static"),
-                                ),
+                                trackOptions = monitorTrackOptions,
                                 selectedTrackId = selectedMonitorTrackIdState.value,
                                 isServiceTrack = isServiceTrack,
                                 onMonitoringSessionStateChanged = { isMonitoring ->
