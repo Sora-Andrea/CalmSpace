@@ -11,8 +11,10 @@ import android.media.MediaRecorder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,12 +45,13 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import com.calmspace.service.AudioFadeConfig.AMBIENT_PLAYBACK_FADE_IN_DURATION_MS
 import kotlin.math.log10
 import kotlin.math.sqrt
 
@@ -103,6 +106,9 @@ class MainActivity : ComponentActivity() {
     private val hasMicPermissionState = mutableStateOf(false)
 
     private var playbackSyncJob: Job? = null
+    private var playbackFadeInJob: Job? = null
+    private var isExoFadeInInProgress = false
+    private var pendingExoPlayerVolume = 1f
     private var loadedTrackId: String? = null
     private var micAudioRecord: AudioRecord? = null
     private var micCaptureJob: Job? = null
@@ -126,6 +132,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hasMicPermissionState.value = hasRecordAudioPermission()
+        refreshPlaybackLevelsFromSelectedTrack(0)
 
         setContent {
             CalmSpaceTheme {
@@ -229,25 +237,74 @@ class MainActivity : ComponentActivity() {
                         // ───────── Monitor Screen ─────────
                         composable(Routes.MONITOR) {
                             val selectedMonitorTrackIdState = remember { mutableStateOf("white_noise") }
-
-                            MonitorScreen(
-                                micLevels = micLevelsState.value,
-                                trackOptions = playbackTrackOptions + listOf(
+                            val isMonitoringSessionActiveState = remember { mutableStateOf(false) }
+                            val exoTrackIds = remember(playbackTrackOptions) {
+                                playbackTrackOptions.map { it.id }.toSet()
+                            }
+                            val isServiceTrack = remember(exoTrackIds) {
+                                { trackId: String -> !exoTrackIds.contains(trackId) }
+                            }
+                            val generatedNoiseTrackOptions = remember {
+                                listOf(
                                     PlaybackTrackOption(id = "white_noise",  title = "Bright Static"),
                                     PlaybackTrackOption(id = "pink_noise",   title = "Balanced Rain"),
                                     PlaybackTrackOption(id = "brown_noise",  title = "Deep Rumble"),
                                     PlaybackTrackOption(id = "blue_noise",   title = "High Hiss"),
                                     PlaybackTrackOption(id = "grey_noise",   title = "Neutral Static"),
-                                ),
+                                )
+                            }
+                            val monitorTrackOptions = remember(playbackTrackOptions, generatedNoiseTrackOptions) {
+                                playbackTrackOptions + generatedNoiseTrackOptions
+                            }
+
+                            LaunchedEffect(
+                                selectedMonitorTrackIdState.value,
+                                exoTrackIds,
+                                isMonitoringSessionActiveState.value
+                            ) {
+                                val selectedMonitorTrackId = selectedMonitorTrackIdState.value
+                                val isKnownTrack = monitorTrackOptions.any { it.id == selectedMonitorTrackId }
+                                if (!isKnownTrack) {
+                                    selectedMonitorTrackIdState.value = "white_noise"
+                                }
+
+                                val resolvedMonitorTrackId = selectedMonitorTrackIdState.value
+                                if (!isServiceTrack(resolvedMonitorTrackId) &&
+                                    selectedTrackIdState.value != resolvedMonitorTrackId
+                                ) {
+                                    selectPlaybackTrack(resolvedMonitorTrackId)
+                                }
+
+                                if (
+                                    isMonitoringSessionActiveState.value &&
+                                    !isServiceTrack(resolvedMonitorTrackId) &&
+                                    !isLoopPlayingState.value
+                                ) {
+                                    startLoopPlayback()
+                                }
+                            }
+
+                            MonitorScreen(
+                                micLevels = micLevelsState.value,
+                                trackOptions = monitorTrackOptions,
                                 selectedTrackId = selectedMonitorTrackIdState.value,
+                                isServiceTrack = isServiceTrack,
+                                onMonitoringSessionStateChanged = { isMonitoring ->
+                                    isMonitoringSessionActiveState.value = isMonitoring
+                                },
                                 onTrackSelected = { trackId ->
                                     selectedMonitorTrackIdState.value = trackId
+                                    val wasLoopPlaying = isLoopPlayingState.value
                                     val isGeneratedNoise = trackId in setOf("white_noise", "pink_noise", "brown_noise", "blue_noise", "grey_noise")
                                     if (isGeneratedNoise) {
                                         stopLoopPlayback()
                                     } else {
                                         selectedTrackIdState.value = trackId
                                         selectPlaybackTrack(trackId)
+
+                                        if (isMonitoringSessionActiveState.value && wasLoopPlaying) {
+                                            startLoopPlayback()
+                                        }
                                     }
                                 },
                                 isTrackPlaybackPlaying = isLoopPlayingState.value,
@@ -255,17 +312,35 @@ class MainActivity : ComponentActivity() {
                                     if (isLoopPlayingState.value) {
                                         stopLoopPlayback()
                                     } else {
-                                        selectedTrackIdState.value = selectedMonitorTrackIdState.value
-                                        selectPlaybackTrack(selectedMonitorTrackIdState.value)
+                                        val selectedTrackId = selectedMonitorTrackIdState.value
+                                        selectedTrackIdState.value = selectedTrackId
+                                        selectPlaybackTrack(selectedTrackId)
                                         startLoopPlayback()
                                     }
                                 },
                                 onTrackVolumeChange = { volume ->
-                                    if (selectedMonitorTrackIdState.value != "white_noise") {
-                                        exoPlayer?.volume = volume
+                                    if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
+                                        if (!isExoFadeInInProgress) {
+                                            exoPlayer?.volume = volume
+                                        } else {
+                                            pendingExoPlayerVolume = volume
+                                        }
+                                    }
+                                },
+                                onMaskingAutomationVolume = { volume ->
+                                    // Option A control stream from monitor service
+                                    // only drives ExoPlayer when the selected ambient
+                                    // source is microphone/asset playback.
+                                    if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
+                                        if (isExoFadeInInProgress) {
+                                            pendingExoPlayerVolume = volume
+                                        } else {
+                                            exoPlayer?.volume = volume
+                                        }
                                     }
                                 },
                                 onStopRecording = {
+                                    stopLoopPlayback()
                                     micLevelsState.value = emptyLevels()
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
                                     navController.navigate(Routes.HOME) {
@@ -362,7 +437,8 @@ class MainActivity : ComponentActivity() {
         if (exoPlayer != null) {
             loadSelectedTrackIntoPlayer()
             if (wasPlaying) {
-                exoPlayer?.play()
+                val currentTrackVolume = exoPlayer?.volume ?: 1f
+                startLoopPlaybackWithFadeIn(currentTrackVolume)
                 startPlaybackVisualizerSync()
             }
         }
@@ -384,12 +460,16 @@ class MainActivity : ComponentActivity() {
 
     private fun startLoopPlayback() {
         loadSelectedTrackIntoPlayer()
-        exoPlayer?.play()
+        val trackVolume = exoPlayer?.volume ?: 1f
+        startLoopPlaybackWithFadeIn(trackVolume)
         isLoopPlayingState.value = true
         startPlaybackVisualizerSync()
     }
 
     private fun stopLoopPlayback() {
+        playbackFadeInJob?.cancel()
+        playbackFadeInJob = null
+        isExoFadeInInProgress = false
         exoPlayer?.pause()
         exoPlayer?.seekToDefaultPosition()
         isLoopPlayingState.value = false
@@ -403,6 +483,37 @@ class MainActivity : ComponentActivity() {
             stopLoopPlayback()
         } else {
             startLoopPlayback()
+        }
+    }
+
+    private fun startLoopPlaybackWithFadeIn(targetVolume: Float) {
+        val player = exoPlayer ?: return
+        val clampedTarget = targetVolume.coerceIn(0f, 1f)
+        playbackFadeInJob?.cancel()
+        pendingExoPlayerVolume = clampedTarget
+
+        player.volume = 0f
+        player.play()
+        isLoopPlayingState.value = true
+        isExoFadeInInProgress = true
+
+        playbackFadeInJob = lifecycleScope.launch {
+            val startMs = SystemClock.elapsedRealtime()
+            try {
+                while (isActive) {
+                    val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                val fraction = (elapsedMs.toFloat() / AMBIENT_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+                    // Quadratic easing keeps the initial rise gentle and avoids jumpy starts.
+                    val easedFraction = (fraction * fraction).coerceIn(0f, 1f)
+                    player.volume = (clampedTarget * easedFraction).coerceIn(0f, 1f)
+
+                    if (fraction >= 1f) break
+                    delay(16L)
+                }
+            } finally {
+                player.volume = pendingExoPlayerVolume.coerceIn(0f, 1f)
+                isExoFadeInInProgress = false
+            }
         }
     }
 
@@ -602,6 +713,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopMicrophoneVisualizer()
+        playbackFadeInJob?.cancel()
         stopPlaybackVisualizerSync()
         exoPlayer?.release()
         exoPlayer = null

@@ -61,10 +61,13 @@ fun MonitorScreen(
     micLevels: List<Float>,
     trackOptions: List<PlaybackTrackOption>,
     selectedTrackId: String,
+    isServiceTrack: (String) -> Boolean,
     onTrackSelected: (String) -> Unit,
+    onMonitoringSessionStateChanged: (Boolean) -> Unit,
     isTrackPlaybackPlaying: Boolean,
     onToggleTrackPlayback: () -> Unit,
     onTrackVolumeChange: (Float) -> Unit,
+    onMaskingAutomationVolume: (Float) -> Unit,
     onStopRecording: () -> Unit
 ) {
     val context = LocalContext.current
@@ -74,6 +77,7 @@ fun MonitorScreen(
     // ─────────────────────────────────────────────────────────────────
 
     var service by remember { mutableStateOf<NoiseMonitorService?>(null) }
+    var isServiceBound by remember { mutableStateOf(false) }
     val connection = remember {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -86,14 +90,17 @@ fun MonitorScreen(
     }
 
     DisposableEffect(Unit) {
-        context.bindService(
+        isServiceBound = context.bindService(
             Intent(context, NoiseMonitorService::class.java),
             connection,
             Context.BIND_AUTO_CREATE
         )
         onDispose {
-            context.unbindService(connection)
+            if (isServiceBound) {
+                context.unbindService(connection)
+            }
             service = null
+            isServiceBound = false
         }
     }
 
@@ -105,6 +112,8 @@ fun MonitorScreen(
     var soundEvents    by remember { mutableStateOf(emptyList<SoundEvent>()) }
     var statusMessage  by remember { mutableStateOf("Ready") }
     var isRecording    by remember { mutableStateOf(false) }
+    var currentBucket  by remember { mutableStateOf("") }
+    var topPrediction  by remember { mutableStateOf("") }
     var isWhiteNoisePlaying by remember { mutableStateOf(false) }
     var startingVolume by remember { mutableStateOf(0.5f) }
     var selectedSound  by remember { mutableStateOf(SoundType.WHITE_NOISE) }
@@ -112,6 +121,7 @@ fun MonitorScreen(
     var isVisualizerActive by remember { mutableStateOf(false) }
     var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
     var showHeadphoneDisconnectDialog by remember { mutableStateOf(false) }
+    val selectedTrackIdState by rememberUpdatedState(selectedTrackId)
 
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
@@ -134,9 +144,23 @@ fun MonitorScreen(
         launch { svc.soundEvents.collect    { soundEvents    = it } }
         launch { svc.statusMessage.collect  { statusMessage  = it } }
         launch { svc.isRecording.collect    { isRecording    = it } }
+        launch { svc.currentMaskingBucket.collect { currentBucket = it } }
+        launch { svc.currentTopPrediction.collect { topPrediction = it } }
         launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
         launch { svc.startingVolume.collect { startingVolume = it } }
         launch { svc.selectedSound.collect  { selectedSound  = it } }
+        launch {
+            svc.automatedTargetVolume.collect { target ->
+                // Option A decision feed: only apply to ExoPlayer path.
+                // Keeps service-generated white-noise track untouched by this control loop.
+                if (!isServiceTrack(selectedTrackIdState) && isRecording) {
+                    onMaskingAutomationVolume(target)
+                }
+            }
+        }
+
+        // TODO: Collect headphone state
+        // launch { svc.isHeadphonesConnected.collect { isHeadphonesConnected = it } }
         launch {
             var prevConnected = false
             svc.isHeadphonesConnected.collect { connected ->
@@ -149,10 +173,35 @@ fun MonitorScreen(
         }
     }
 
+    LaunchedEffect(service, isRecording) {
+        val svc = service ?: return@LaunchedEffect
+        svc.setMaskingAutomationEnabled(isRecording)
+        svc.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
+    }
+
     LaunchedEffect(isRecording) {
+        onMonitoringSessionStateChanged(isRecording)
         isVisualizerActive = isRecording
         if (!isRecording) {
             monitorLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
+        }
+    }
+
+    // Defensive reconciliation: keep actual playback aligned with dropdown selection
+    // when returning from other screens or recovering from state drift.
+    LaunchedEffect(
+        selectedTrackId,
+        isRecording,
+        service
+    ) {
+        service?.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
+        if (!isRecording) return@LaunchedEffect
+
+        val svc = service ?: return@LaunchedEffect
+        if (isServiceTrack(selectedTrackId)) {
+            if (!isWhiteNoisePlaying) svc.startWhiteNoise()
+        } else if (!isTrackPlaybackPlaying) {
+            onToggleTrackPlayback()
         }
     }
 
@@ -167,6 +216,22 @@ fun MonitorScreen(
         )
     }
 
+    // Start the selected ambient path for a monitoring session.
+    // This keeps the logic in one place: service track starts service playback,
+    // Exo track starts Exo playback.
+    val startAmbientTrackForSelection = {
+        service?.setMaskingAutomationEnabled(true)
+        service?.setGeneratedNoisePlaybackEnabled(isServiceTrack(selectedTrackId))
+        service?.setStartingVolume(startingVolume)
+        if (isServiceTrack(selectedTrackId)) {
+            if (!isWhiteNoisePlaying) {
+                service?.startWhiteNoise()
+            }
+        } else if (!isTrackPlaybackPlaying) {
+            onToggleTrackPlayback()
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -174,6 +239,7 @@ fun MonitorScreen(
         if (isGranted) {
             isVisualizerActive = true
             context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
+            startAmbientTrackForSelection()
         }
     }
 
@@ -222,12 +288,12 @@ fun MonitorScreen(
     // Derived UI state
     // ─────────────────────────────────────────────────────────────────
 
-    val ambientNoise = if (isRecording) "${currentDb.toInt()} dB" else "-- dB"
-
-    val lastDetected = when {
-        soundEvents.isNotEmpty() -> "Detected recently"
-        isRecording              -> "Monitoring..."
-        else                     -> "No session active"
+    val bucketLabel = if (isRecording) currentBucket.ifBlank { "Initializing..." } else "No session active"
+    val topPredictionText = if (isRecording) topPrediction else ""
+    val displayLine = if (topPredictionText.isBlank()) {
+        bucketLabel
+    } else {
+        "$bucketLabel · $topPredictionText"
     }
 
     val inactiveVisualizerLevels = remember(micLevels.size) {
@@ -288,11 +354,6 @@ fun MonitorScreen(
             )
         }
 
-            // ───────── Decorative Rings ─────────
-            MonitorRingsDisplay()
-
-            Spacer(modifier = Modifier.height(24.dp))
-
             // ───────── Sleep Time Display ─────────
             Text(
                 text = sleepTime,
@@ -305,7 +366,7 @@ fun MonitorScreen(
                 color = androidx.compose.ui.graphics.Color.Gray
             )
             Text(
-                text = "$ambientNoise · $lastDetected",
+                text = displayLine,
                 style = MaterialTheme.typography.bodySmall,
                 color = androidx.compose.ui.graphics.Color.Gray
             )
@@ -354,9 +415,8 @@ fun MonitorScreen(
                     }
                 },
                 onVolumeChange = { volume ->
-                    if (isGeneratedNoise) {
-                        service?.setStartingVolume(volume)
-                    } else {
+                    service?.setStartingVolume(volume)
+                    if (!isGeneratedNoise) {
                         onTrackVolumeChange(volume)
                     }
                 },
@@ -370,15 +430,28 @@ fun MonitorScreen(
         // ───────── Start/Stop Session Button — always visible ─────────
         Button(
             onClick = {
+                // NOTE for auditing:
+                // session start/stop should only gate service recording + playback here.
                 if (isRecording) {
                     isVisualizerActive = false
                     monitorLevels = inactiveVisualizerLevels
-                    service?.stopRecording()
+                    if (isServiceTrack(selectedTrackId)) {
+                        service?.stopWhiteNoise()
+                        service?.setGeneratedNoisePlaybackEnabled(false)
+                    } else if (isTrackPlaybackPlaying) {
+                        onToggleTrackPlayback()
+                    }
+                    try {
+                        service?.stopRecording()
+                        service?.setMaskingAutomationEnabled(false)
+                    } catch (_: Exception) {
+                    }
                     onStopRecording()
                 } else {
                     if (hasAudioPermission) {
                         isVisualizerActive = true
                         context.startForegroundService(Intent(context, NoiseMonitorService::class.java))
+                        startAmbientTrackForSelection()
                     } else {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
