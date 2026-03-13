@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.log10
 import kotlin.math.sqrt
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import kotlin.random.Random
 
 // ─────────────────────────────────────────────────────────────────────
@@ -72,7 +74,6 @@ class NoiseMonitorService : Service() {
         const val QUIET_TIMEOUT_MS = 1000L
         private const val SILENT_CALIBRATION_MS = 2000L
         private const val WN_CALIBRATION_MS    = 1000L
-        private const val ATTACK_SMOOTHING = 0.55f
         private const val DECAY_SMOOTHING  = 0.88f
         private const val SAMPLE_RATE = 44100
         private const val VISUALIZER_UPDATE_MS = 33L
@@ -107,9 +108,7 @@ class NoiseMonitorService : Service() {
     private val _selectedSound = MutableStateFlow(SoundType.WHITE_NOISE)
     val selectedSound: StateFlow<SoundType> = _selectedSound.asStateFlow()
 
-    // TODO: Add headphone detection state
-    // private val _isHeadphonesConnected = MutableStateFlow(false)
-    // val isHeadphonesConnected: StateFlow<Boolean> = _isHeadphonesConnected.asStateFlow()
+    val isHeadphonesConnected: StateFlow<Boolean> get() = headphoneManager.isConnected
 
     // ─────────────────────────────────────────────────────────────────
     // Internal state
@@ -119,6 +118,7 @@ class NoiseMonitorService : Service() {
     private var recorder: AudioRecord? = null
 
     @Volatile private var currentMaskingVolume = 0f
+    @Volatile private var isFadingIn = false
     private var running = false
 
     // Noise playback
@@ -142,6 +142,8 @@ class NoiseMonitorService : Service() {
 
     private val binder = LocalBinder()
 
+    private lateinit var headphoneManager: HeadphoneManager
+
     // ─────────────────────────────────────────────────────────────────
     // Lifecycle
     // ─────────────────────────────────────────────────────────────────
@@ -151,9 +153,21 @@ class NoiseMonitorService : Service() {
         createNotificationChannel()
         initAudioTrack()
 
-        // TODO: Register headphone detection callback
-        // val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        // audioManager.registerAudioDeviceCallback(headphoneCallback, null)
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        headphoneManager = HeadphoneManager(
+            audioManager = audioManager,
+            onConnected = {
+                // Android auto-routes USAGE_MEDIA to headphones automatically.
+                // Always use the phone's built-in mic for ambient detection — the headset mic
+                // is near the user's mouth/ear and misses room noise entirely.
+                // Fade in so plugging in mid-session doesn't cause a sudden loud burst.
+                if (isNoiseThreadRunning.get()) startFadeIn(currentMaskingVolume)
+            },
+            onDisconnected = {
+                // Nothing to do — mic was always on the phone mic.
+            }
+        )
+        headphoneManager.start()
     }
 
     override fun onBind(intent: Intent): IBinder = binder
@@ -167,11 +181,7 @@ class NoiseMonitorService : Service() {
     override fun onDestroy() {
         stopRecording()
         releaseAudioTrack()
-
-        // TODO: Unregister headphone callback
-        // val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        // audioManager.unregisterAudioDeviceCallback(headphoneCallback)
-
+        headphoneManager.stop()
         super.onDestroy()
     }
 
@@ -223,12 +233,7 @@ class NoiseMonitorService : Service() {
     }
 
     fun setStartingVolume(volume: Float) {
-        // TODO: Apply headphone-specific volume cap here
-        // val maxVolume = if (_isHeadphonesConnected.value) 0.7f else 1.0f
-        // _startingVolume.value = volume.coerceIn(0f, maxVolume)
-
         _startingVolume.value = volume.coerceIn(0f, 1f)
-
         // Always sync the AudioTrack so the slider gives live feedback during preview
         currentMaskingVolume = _startingVolume.value
         if (isNoiseThreadRunning.get()) audioTrack?.setVolume(currentMaskingVolume)
@@ -274,6 +279,8 @@ class NoiseMonitorService : Service() {
                     return@Thread
                 }
 
+                // Always use the phone's built-in mic — it sits on the nightstand and detects
+                // room noise (baby, door, etc.). Headset mic is near the mouth and misses ambient sounds.
                 recorder?.startRecording()
                 val buf = ShortArray(bufSizeShorts)
 
@@ -362,17 +369,19 @@ class NoiseMonitorService : Service() {
                         // val maxVol = if (_isHeadphonesConnected.value) 0.7f else 1.0f
                         // val cappedTarget = targetVolume.coerceAtMost(maxVol)
 
+                        // Attack is instant — masking jumps immediately to cover the sound.
+                        // Decay is gradual so the volume fades smoothly once it's quiet again.
                         currentMaskingVolume = if (targetVolume > currentMaskingVolume) {
-                            (currentMaskingVolume * ATTACK_SMOOTHING + targetVolume * (1f - ATTACK_SMOOTHING))
-                                .coerceIn(floor, 1f)
+                            targetVolume.coerceIn(floor, 1f)
                         } else {
                             (currentMaskingVolume * DECAY_SMOOTHING + targetVolume * (1f - DECAY_SMOOTHING))
                                 .coerceAtLeast(floor)
                         }
 
                         // Apply volume directly — use the atomic flag, not the StateFlow,
-                        // to avoid any UI-state sync lag
-                        if (isNoiseThreadRunning.get()) {
+                        // to avoid any UI-state sync lag.
+                        // Skip if a fade-in is active so the two threads don't fight.
+                        if (isNoiseThreadRunning.get() && !isFadingIn) {
                             audioTrack?.setVolume(currentMaskingVolume)
                         }
 
@@ -442,6 +451,32 @@ class NoiseMonitorService : Service() {
         // IllegalStateException.
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Headphone fade-in
+    // ─────────────────────────────────────────────────────────────────
+
+    // Gradually ramps audio from 0 to targetVolume over ~1.5 seconds when
+    // headphones are plugged in mid-session, to avoid a sudden loud burst.
+    private fun startFadeIn(targetVolume: Float) {
+        isFadingIn = true
+        Thread {
+            val steps = 30
+            val stepMs = 50L
+            audioTrack?.setVolume(0f)
+            for (i in 1..steps) {
+                Thread.sleep(stepMs)
+                if (!isNoiseThreadRunning.get()) {
+                    isFadingIn = false
+                    return@Thread
+                }
+                val vol = targetVolume * (i.toFloat() / steps)
+                audioTrack?.setVolume(vol)
+                currentMaskingVolume = vol
+            }
+            isFadingIn = false
+        }.start()
     }
 
     // ─────────────────────────────────────────────────────────────────
