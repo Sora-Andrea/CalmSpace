@@ -50,6 +50,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import com.calmspace.service.AudioFadeConfig.AMBIENT_PLAYBACK_FADE_IN_DURATION_MS
 import kotlin.math.log10
 import kotlin.math.sqrt
 
@@ -104,6 +106,9 @@ class MainActivity : ComponentActivity() {
     private val hasMicPermissionState = mutableStateOf(false)
 
     private var playbackSyncJob: Job? = null
+    private var playbackFadeInJob: Job? = null
+    private var isExoFadeInInProgress = false
+    private var pendingExoPlayerVolume = 1f
     private var loadedTrackId: String? = null
     private var micAudioRecord: AudioRecord? = null
     private var micCaptureJob: Job? = null
@@ -315,7 +320,11 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onTrackVolumeChange = { volume ->
                                     if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
-                                        exoPlayer?.volume = volume
+                                        if (!isExoFadeInInProgress) {
+                                            exoPlayer?.volume = volume
+                                        } else {
+                                            pendingExoPlayerVolume = volume
+                                        }
                                     }
                                 },
                                 onMaskingAutomationVolume = { volume ->
@@ -323,7 +332,11 @@ class MainActivity : ComponentActivity() {
                                     // only drives ExoPlayer when the selected ambient
                                     // source is microphone/asset playback.
                                     if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
-                                        exoPlayer?.volume = volume
+                                        if (isExoFadeInInProgress) {
+                                            pendingExoPlayerVolume = volume
+                                        } else {
+                                            exoPlayer?.volume = volume
+                                        }
                                     }
                                 },
                                 onStopRecording = {
@@ -424,7 +437,8 @@ class MainActivity : ComponentActivity() {
         if (exoPlayer != null) {
             loadSelectedTrackIntoPlayer()
             if (wasPlaying) {
-                exoPlayer?.play()
+                val currentTrackVolume = exoPlayer?.volume ?: 1f
+                startLoopPlaybackWithFadeIn(currentTrackVolume)
                 startPlaybackVisualizerSync()
             }
         }
@@ -446,12 +460,16 @@ class MainActivity : ComponentActivity() {
 
     private fun startLoopPlayback() {
         loadSelectedTrackIntoPlayer()
-        exoPlayer?.play()
+        val trackVolume = exoPlayer?.volume ?: 1f
+        startLoopPlaybackWithFadeIn(trackVolume)
         isLoopPlayingState.value = true
         startPlaybackVisualizerSync()
     }
 
     private fun stopLoopPlayback() {
+        playbackFadeInJob?.cancel()
+        playbackFadeInJob = null
+        isExoFadeInInProgress = false
         exoPlayer?.pause()
         exoPlayer?.seekToDefaultPosition()
         isLoopPlayingState.value = false
@@ -465,6 +483,37 @@ class MainActivity : ComponentActivity() {
             stopLoopPlayback()
         } else {
             startLoopPlayback()
+        }
+    }
+
+    private fun startLoopPlaybackWithFadeIn(targetVolume: Float) {
+        val player = exoPlayer ?: return
+        val clampedTarget = targetVolume.coerceIn(0f, 1f)
+        playbackFadeInJob?.cancel()
+        pendingExoPlayerVolume = clampedTarget
+
+        player.volume = 0f
+        player.play()
+        isLoopPlayingState.value = true
+        isExoFadeInInProgress = true
+
+        playbackFadeInJob = lifecycleScope.launch {
+            val startMs = SystemClock.elapsedRealtime()
+            try {
+                while (isActive) {
+                    val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                val fraction = (elapsedMs.toFloat() / AMBIENT_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+                    // Quadratic easing keeps the initial rise gentle and avoids jumpy starts.
+                    val easedFraction = (fraction * fraction).coerceIn(0f, 1f)
+                    player.volume = (clampedTarget * easedFraction).coerceIn(0f, 1f)
+
+                    if (fraction >= 1f) break
+                    delay(16L)
+                }
+            } finally {
+                player.volume = pendingExoPlayerVolume.coerceIn(0f, 1f)
+                isExoFadeInInProgress = false
+            }
         }
     }
 
@@ -664,6 +713,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopMicrophoneVisualizer()
+        playbackFadeInJob?.cancel()
         stopPlaybackVisualizerSync()
         exoPlayer?.release()
         exoPlayer = null

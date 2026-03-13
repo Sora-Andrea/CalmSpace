@@ -15,6 +15,8 @@ import android.media.MediaRecorder
 import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
+import com.calmspace.service.AudioFadeConfig.AMBIENT_PLAYBACK_FADE_IN_DURATION_MS
 import com.calmspace.masking.MaskingDecisionEngine
 import com.calmspace.masking.MaskingBucket
 import com.calmspace.masking.smoothMaskingVolume
@@ -85,6 +87,7 @@ class NoiseMonitorService : Service() {
         private const val MASKING_INFERENCE_MS = 300L
         private const val MASKING_SILENCE_RELEASE_DELAY_MS = 2500L
         private const val MASKING_MODEL_FILENAME = "yamnet.tflite"
+        private const val GENERATED_NOISE_FADE_IN_STEP_MS = 16L
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -150,6 +153,9 @@ class NoiseMonitorService : Service() {
     private var audioTrack: AudioTrack? = null
     private var noiseThread: Thread? = null
     private val isNoiseThreadRunning = AtomicBoolean(false)
+    private var fadeInThread: Thread? = null
+    @Volatile private var isNoiseFadeInActive = false
+    @Volatile private var fadeInGain = 0f
     @Volatile private var isGeneratedNoisePlaybackEnabled = false
 
     // Pink noise generator state (Paul Kellett's refined method)
@@ -209,7 +215,11 @@ class NoiseMonitorService : Service() {
     fun startWhiteNoise() {
         if (isNoiseThreadRunning.get()) return
         isNoiseThreadRunning.set(true)
+        isNoiseFadeInActive = true
         _isPlaying.value = true
+        currentMaskingVolume = _startingVolume.value
+        fadeInGain = 0f
+        audioTrack?.setVolume(0f)
 
         val bufSize = maxOf(
             AudioTrack.getMinBufferSize(
@@ -224,22 +234,66 @@ class NoiseMonitorService : Service() {
                 for (i in noiseBuf.indices) {
                     noiseBuf[i] = nextSample(type)
                 }
+                // Keep volume synchronized with the fade/automation layer
+                // while the generator thread is actively writing audio.
+                if (isNoiseFadeInActive || currentMaskingVolume > 0f) {
+                    applyNoiseTrackVolume()
+                }
                 audioTrack?.write(noiseBuf, 0, noiseBuf.size)
             }
         }.apply { start() }
 
-        // Apply current volume immediately so sound starts at the right level
-        audioTrack?.setVolume(currentMaskingVolume.coerceAtLeast(_startingVolume.value))
+        startWhiteNoiseFadeIn(_startingVolume.value)
     }
 
     fun stopWhiteNoise() {
         if (!isNoiseThreadRunning.get()) return
         isNoiseThreadRunning.set(false)
+        fadeInThread?.interrupt()
+        fadeInThread = null
+        isNoiseFadeInActive = false
+        fadeInGain = 0f
+
         // Do not join here — this may be called from the main thread (button click).
         // The thread will exit on its own once the flag is false.
         noiseThread = null
         audioTrack?.setVolume(0f)
         _isPlaying.value = false
+    }
+
+    private fun startWhiteNoiseFadeIn(targetVolume: Float) {
+        val clampedTarget = targetVolume.coerceIn(0f, 1f)
+        fadeInThread?.interrupt()
+        isNoiseFadeInActive = true
+        fadeInThread = Thread {
+            val startedAt = SystemClock.elapsedRealtime()
+            while (isNoiseThreadRunning.get()) {
+                val elapsed = SystemClock.elapsedRealtime() - startedAt
+                val fraction = (elapsed.toFloat() / AMBIENT_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+                fadeInGain = clampedTarget * (fraction * fraction)
+                applyNoiseTrackVolume()
+
+                if (fraction >= 1f) break
+                try {
+                    Thread.sleep(GENERATED_NOISE_FADE_IN_STEP_MS)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+            }
+
+            fadeInGain = if (isNoiseThreadRunning.get()) clampedTarget else 0f
+            isNoiseFadeInActive = false
+        }.apply { start() }
+    }
+
+    private fun applyNoiseTrackVolume() {
+        val targetGain = if (isNoiseFadeInActive) {
+            fadeInGain
+        } else {
+            currentMaskingVolume
+        }
+        val gain = targetGain.coerceIn(0f, 1f)
+        audioTrack?.setVolume(gain)
     }
 
     fun setSoundType(type: SoundType) {
@@ -266,7 +320,7 @@ class NoiseMonitorService : Service() {
             }
         } else {
             currentMaskingVolume = clampedVolume
-            if (_isPlaying.value) audioTrack?.setVolume(currentMaskingVolume)
+            if (_isPlaying.value) applyNoiseTrackVolume()
             _automatedTargetVolume.value = clampedVolume
         }
     }
@@ -297,7 +351,7 @@ class NoiseMonitorService : Service() {
         }
         // Always sync the AudioTrack so the slider gives live feedback during preview
         currentMaskingVolume = _startingVolume.value
-        if (isNoiseThreadRunning.get()) audioTrack?.setVolume(currentMaskingVolume)
+        if (isNoiseThreadRunning.get()) applyNoiseTrackVolume()
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -377,7 +431,7 @@ class NoiseMonitorService : Service() {
                 // ambient sounds push ABOVE this combined floor — the speaker output
                 // is effectively "calibrated out."
                 currentMaskingVolume = _startingVolume.value
-                audioTrack?.setVolume(currentMaskingVolume)
+                applyNoiseTrackVolume()
                 if (isGeneratedNoisePlaybackEnabled && !isNoiseThreadRunning.get()) startWhiteNoise()
                 _automatedTargetVolume.value = _startingVolume.value
 
@@ -481,7 +535,7 @@ class NoiseMonitorService : Service() {
                         // Apply volume directly — use the atomic flag, not the StateFlow,
                         // to avoid any UI-state sync lag
                         if (isNoiseThreadRunning.get()) {
-                            audioTrack?.setVolume(currentMaskingVolume)
+                            applyNoiseTrackVolume()
                         }
 
 
