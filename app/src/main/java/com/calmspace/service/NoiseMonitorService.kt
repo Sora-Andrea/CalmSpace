@@ -1,11 +1,13 @@
 package com.calmspace.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -30,6 +32,7 @@ import kotlin.math.log10
 import kotlin.math.sqrt
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
+import androidx.core.app.ActivityCompat
 import kotlin.random.Random
 
 // ─────────────────────────────────────────────────────────────────────
@@ -157,6 +160,7 @@ class NoiseMonitorService : Service() {
     @Volatile private var isNoiseFadeInActive = false
     @Volatile private var fadeInGain = 0f
     @Volatile private var isGeneratedNoisePlaybackEnabled = false
+    @Volatile private var isHeadphoneFadeInActive = false
 
     // Pink noise generator state (Paul Kellett's refined method)
     private var b0 = 0.0; private var b1 = 0.0; private var b2 = 0.0
@@ -393,6 +397,20 @@ class NoiseMonitorService : Service() {
             val bufSizeShorts = bufSizeBytes / 2
 
             try {
+                if (ActivityCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.RECORD_AUDIO
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    // TODO: Consider calling
+                    //    ActivityCompat#requestPermissions
+                    // here to request the missing permissions, and then overriding
+                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                    //                                          int[] grantResults)
+                    // to handle the case where the user grants the permission. See the documentation
+                    // for ActivityCompat#requestPermissions for more details.
+                    return@Thread
+                }
                 recorder = AudioRecord(
                     MediaRecorder.AudioSource.UNPROCESSED,
                     sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSizeBytes
@@ -636,7 +654,7 @@ class NoiseMonitorService : Service() {
     // Gradually ramps audio from 0 to targetVolume over ~1.5 seconds when
     // headphones are plugged in mid-session, to avoid a sudden loud burst.
     private fun startFadeIn(targetVolume: Float) {
-        isFadingIn = true
+        isHeadphoneFadeInActive = true
         Thread {
             val steps = 30
             val stepMs = 50L
@@ -644,14 +662,14 @@ class NoiseMonitorService : Service() {
             for (i in 1..steps) {
                 Thread.sleep(stepMs)
                 if (!isNoiseThreadRunning.get()) {
-                    isFadingIn = false
+                    isHeadphoneFadeInActive = false
                     return@Thread
                 }
                 val vol = targetVolume * (i.toFloat() / steps)
                 audioTrack?.setVolume(vol)
                 currentMaskingVolume = vol
             }
-            isFadingIn = false
+            isHeadphoneFadeInActive = false
         }.start()
     }
 
