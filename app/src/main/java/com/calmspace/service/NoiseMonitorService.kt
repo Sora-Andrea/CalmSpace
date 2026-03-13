@@ -83,6 +83,7 @@ class NoiseMonitorService : Service() {
         private const val VISUALIZER_UPDATE_MS = 33L
         private const val STATUS_UPDATE_MS = 100L
         private const val MASKING_INFERENCE_MS = 300L
+        private const val MASKING_SILENCE_RELEASE_DELAY_MS = 2500L
         private const val MASKING_MODEL_FILENAME = "yamnet.tflite"
     }
 
@@ -412,6 +413,7 @@ class NoiseMonitorService : Service() {
                 var smoothedDb = triggerLevel
                 var lastInferenceMs = now
                 var lastAutomationSmoothingMs = now
+                var lastLoudWindowMs = now
 
                 while (running) {
                     val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
@@ -438,9 +440,19 @@ class NoiseMonitorService : Service() {
                             // Option A (YAMNet): derive target from audio classes in a
                             // rolling 2s window and move current volume toward target.
                             // --- YAMNet-driven control path ---
-                            if (read > 0 && nowMs - lastInferenceMs >= MASKING_INFERENCE_MS) {
-                                updateMaskingDecisionFromAudioWindow(buf, read, floor)
-                                lastInferenceMs = nowMs
+                            if (latestDb > eventThreshold) {
+                                lastLoudWindowMs = nowMs
+                                if (read > 0 && nowMs - lastInferenceMs >= MASKING_INFERENCE_MS) {
+                                    updateMaskingDecisionFromAudioWindow(buf, read, floor)
+                                    lastInferenceMs = nowMs
+                                }
+                            } else if (nowMs - lastLoudWindowMs >= MASKING_SILENCE_RELEASE_DELAY_MS &&
+                                _automatedTargetVolume.value > floor
+                            ) {
+                                // Long-tail decay behavior: if no relevant ambient event is
+                                // detected for a short while, return to baseline and decay slowly.
+                                _automatedTargetVolume.value = floor
+                                _automatedDecisionReason.value = "Silence detected, returning to baseline"
                             }
 
                             currentMaskingVolume = smoothMaskingVolume(
