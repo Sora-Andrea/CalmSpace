@@ -77,6 +77,7 @@ fun MonitorScreen(
     // ─────────────────────────────────────────────────────────────────
 
     var service by remember { mutableStateOf<NoiseMonitorService?>(null) }
+    var isServiceBound by remember { mutableStateOf(false) }
     val connection = remember {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -89,14 +90,17 @@ fun MonitorScreen(
     }
 
     DisposableEffect(Unit) {
-        context.bindService(
+        isServiceBound = context.bindService(
             Intent(context, NoiseMonitorService::class.java),
             connection,
             Context.BIND_AUTO_CREATE
         )
         onDispose {
-            context.unbindService(connection)
+            if (isServiceBound) {
+                context.unbindService(connection)
+            }
             service = null
+            isServiceBound = false
         }
     }
 
@@ -156,6 +160,7 @@ fun MonitorScreen(
     LaunchedEffect(service, isRecording) {
         val svc = service ?: return@LaunchedEffect
         svc.setMaskingAutomationEnabled(isRecording)
+        svc.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
     }
 
     LaunchedEffect(isRecording) {
@@ -171,10 +176,9 @@ fun MonitorScreen(
     LaunchedEffect(
         selectedTrackId,
         isRecording,
-        isTrackPlaybackPlaying,
-        isWhiteNoisePlaying,
         service
     ) {
+        service?.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
         if (!isRecording) return@LaunchedEffect
 
         val svc = service ?: return@LaunchedEffect
@@ -201,6 +205,8 @@ fun MonitorScreen(
     // Exo track starts Exo playback.
     val startAmbientTrackForSelection = {
         service?.setMaskingAutomationEnabled(true)
+        service?.setGeneratedNoisePlaybackEnabled(isServiceTrack(selectedTrackId))
+        service?.setStartingVolume(startingVolume)
         if (isServiceTrack(selectedTrackId)) {
             if (!isWhiteNoisePlaying) {
                 service?.startWhiteNoise()
@@ -302,11 +308,6 @@ fun MonitorScreen(
             )
         }
 
-            // ───────── Decorative Rings ─────────
-            MonitorRingsDisplay()
-
-            Spacer(modifier = Modifier.height(24.dp))
-
             // ───────── Sleep Time Display ─────────
             Text(
                 text = sleepTime,
@@ -368,9 +369,8 @@ fun MonitorScreen(
                     }
                 },
                 onVolumeChange = { volume ->
-                    if (isGeneratedNoise) {
-                        service?.setStartingVolume(volume)
-                    } else {
+                    service?.setStartingVolume(volume)
+                    if (!isGeneratedNoise) {
                         onTrackVolumeChange(volume)
                     }
                 },
@@ -389,8 +389,17 @@ fun MonitorScreen(
                 if (isRecording) {
                     isVisualizerActive = false
                     monitorLevels = inactiveVisualizerLevels
-                    service?.stopRecording()
-                    service?.setMaskingAutomationEnabled(false)
+                    if (isServiceTrack(selectedTrackId)) {
+                        service?.stopWhiteNoise()
+                        service?.setGeneratedNoisePlaybackEnabled(false)
+                    } else if (isTrackPlaybackPlaying) {
+                        onToggleTrackPlayback()
+                    }
+                    try {
+                        service?.stopRecording()
+                        service?.setMaskingAutomationEnabled(false)
+                    } catch (_: Exception) {
+                    }
                     onStopRecording()
                 } else {
                     if (hasAudioPermission) {

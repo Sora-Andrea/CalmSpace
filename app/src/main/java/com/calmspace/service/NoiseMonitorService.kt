@@ -142,6 +142,7 @@ class NoiseMonitorService : Service() {
     private var audioTrack: AudioTrack? = null
     private var noiseThread: Thread? = null
     private val isNoiseThreadRunning = AtomicBoolean(false)
+    @Volatile private var isGeneratedNoisePlaybackEnabled = false
 
     // Pink noise generator state (Paul Kellett's refined method)
     private var b0 = 0.0; private var b1 = 0.0; private var b2 = 0.0
@@ -262,6 +263,15 @@ class NoiseMonitorService : Service() {
         }
     }
 
+    fun setGeneratedNoisePlaybackEnabled(enabled: Boolean) {
+        isGeneratedNoisePlaybackEnabled = enabled
+        if (!enabled) {
+            stopWhiteNoise()
+        } else if (running && !isNoiseThreadRunning.get()) {
+            startWhiteNoise()
+        }
+    }
+
     // -------------------------------------------------------------------------
     // ML masking control surface.
     // This is the monitoring-time switch for YAMNet-driven adaptive playback.
@@ -360,7 +370,7 @@ class NoiseMonitorService : Service() {
                 // is effectively "calibrated out."
                 currentMaskingVolume = _startingVolume.value
                 audioTrack?.setVolume(currentMaskingVolume)
-                if (!isNoiseThreadRunning.get()) startWhiteNoise()
+                if (isGeneratedNoisePlaybackEnabled && !isNoiseThreadRunning.get()) startWhiteNoise()
                 _automatedTargetVolume.value = _startingVolume.value
 
                 var wnSum = 0.0; var wnSamples = 0
@@ -499,7 +509,11 @@ class NoiseMonitorService : Service() {
                 _soundEvents.value = detectedEvents
 
             } finally {
-                recorder?.stop()
+                try {
+                    recorder?.stop()
+                } catch (_: IllegalStateException) {
+                    // Ignore stop calls if recorder did not reach ACTIVE state.
+                }
                 recorder?.release()
                 recorder = null
                 wakeLock?.release()
@@ -515,6 +529,7 @@ class NoiseMonitorService : Service() {
 
     fun stopRecording() {
         running = false
+        setGeneratedNoisePlaybackEnabled(false)
         stopWhiteNoise()
         _automatedDecisionReason.value = "Session ended"
         _automatedTargetVolume.value = _startingVolume.value
