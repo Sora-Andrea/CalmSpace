@@ -25,6 +25,8 @@ import androidx.core.content.ContextCompat
 import com.calmspace.service.NoiseMonitorService
 import com.calmspace.service.SoundEvent
 import com.calmspace.service.SoundType
+import com.calmspace.ui.player.AmplitudeVisualizer
+import com.calmspace.ui.player.AmplitudeVisualizerMode
 import com.calmspace.ui.player.PlaybackTrackOption
 import com.calmspace.ui.screens.monitor.AudioPlayerCard
 import com.calmspace.ui.screens.monitor.MonitorRingsDisplay
@@ -234,6 +236,18 @@ fun MonitorScreen(
             }
 
             Spacer(modifier = Modifier.height(32.dp))
+        // ───────── Decorative Rings ─────────
+        Box(
+            modifier = Modifier.size(220.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            MonitorRingsDisplay()
+            AmplitudeVisualizer(
+                levels = visualizerLevels,
+                modifier = Modifier.fillMaxSize(),
+                mode = AmplitudeVisualizerMode.CIRCULAR
+            )
+        }
 
             // ───────── Decorative Rings ─────────
             MonitorRingsDisplay()
