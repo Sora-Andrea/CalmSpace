@@ -2,6 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Microphone permission for ambient noise monitoring -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    
+    <!-- Foreground service permissions for background noise monitoring -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    
+    <!-- Wake lock to prevent CPU sleep during monitoring -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -11,17 +21,24 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.CalmSpace">
+        
         <activity
-            android:name=".MainActivity"
+            android:name="com.calmspace.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.CalmSpace">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Noise monitoring foreground service -->
+        <service
+            android:name="com.calmspace.service.NoiseMonitorService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+
     </application>
 
 </manifest>
