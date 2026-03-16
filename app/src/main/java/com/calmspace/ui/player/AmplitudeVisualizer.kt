@@ -26,7 +26,9 @@ fun AmplitudeVisualizer(
     levels: List<Float>,
     modifier: Modifier = Modifier,
     mode: AmplitudeVisualizerMode = AmplitudeVisualizerMode.HORIZONTAL,
-    barColor: Color = MaterialTheme.colorScheme.primary
+    barColor: Color = MaterialTheme.colorScheme.primary,
+    secondaryLevels: List<Float>? = null,
+    secondaryBarColor: Color = MaterialTheme.colorScheme.tertiary
 ) {
     val resolvedModifier = if (mode == AmplitudeVisualizerMode.CIRCULAR) {
         modifier
@@ -74,6 +76,9 @@ fun AmplitudeVisualizer(
                 val angleStep = 360f / barCount
                 val startAngle = -90f // 12 o'clock
 
+                // Inner radius floor — bars must stop before reaching the center logo
+                val innerRadiusFloor = min(size.width, size.height) * 0.16f
+
                 levels.forEachIndexed { index, rawLevel ->
                     val level = rawLevel.coerceIn(0f, 1f)
                     val barLength = minBarLength + (maxBarLength - minBarLength) * level
@@ -90,12 +95,40 @@ fun AmplitudeVisualizer(
                         centerY + endRadius * sin(radians).toFloat()
                     )
                     drawLine(
-                        color = barColor,
+                        color = barColor.copy(alpha = (0.2f + 0.8f * level).coerceIn(0f, 1f)),
                         start = start,
                         end = end,
                         strokeWidth = barThickness,
                         cap = StrokeCap.Round
                     )
+                }
+
+                // Secondary (masking volume) ring — bars grow inward from the same ring
+                secondaryLevels?.let { secLevels ->
+                    if (secLevels.isEmpty()) return@let
+                    val secAngleStep = 360f / secLevels.size
+                    secLevels.forEachIndexed { index, rawLevel ->
+                        val level = rawLevel.coerceIn(0f, 1f)
+                        val barLength = minBarLength + (maxBarLength - minBarLength) * level
+                        val angle = startAngle + secAngleStep * index
+                        val radians = Math.toRadians(angle.toDouble())
+                        val start = Offset(
+                            centerX + ringRadius * cos(radians).toFloat(),
+                            centerY + ringRadius * sin(radians).toFloat()
+                        )
+                        val innerRadius = (ringRadius - barLength).coerceAtLeast(innerRadiusFloor)
+                        val end = Offset(
+                            centerX + innerRadius * cos(radians).toFloat(),
+                            centerY + innerRadius * sin(radians).toFloat()
+                        )
+                        drawLine(
+                            color = secondaryBarColor.copy(alpha = (0.2f + 0.8f * level).coerceIn(0f, 1f)),
+                            start = start,
+                            end = end,
+                            strokeWidth = barThickness,
+                            cap = StrokeCap.Round
+                        )
+                    }
                 }
             }
         }
