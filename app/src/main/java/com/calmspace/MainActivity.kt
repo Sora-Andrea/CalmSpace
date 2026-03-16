@@ -132,6 +132,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val startDestination = Routes.WELCOME
+        // Future code for auto logging in users already logged in
+        //val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
+        //    Routes.HOME  // User already logged in, go directly to home
+        //} else {
+        //    Routes.WELCOME
+        //}
         hasMicPermissionState.value = hasRecordAudioPermission()
         refreshPlaybackLevelsFromSelectedTrack(0)
 
@@ -161,7 +168,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.WELCOME,
+                        startDestination = startDestination,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
@@ -180,13 +187,9 @@ class MainActivity : ComponentActivity() {
                         // ───────── Login Screen ─────────
                         composable(Routes.LOGIN) {
                             LoginScreen(
-                                onBack = {
-                                    navController.popBackStack()
-                                },
-                                onLogin = { email, password ->
-                                    // TODO:
-                                    // - Authenticate user
-                                    // - Handle success / error
+                                onSignupInstead = { navController.navigate(Routes.SIGNUP) },
+                                onLoginSuccess = {
+                                    // Clear back stack and go to home (or questionnaire if needed)
                                     navController.navigate(Routes.HOME) {
                                         popUpTo(Routes.WELCOME) { inclusive = true }
                                     }
@@ -197,14 +200,12 @@ class MainActivity : ComponentActivity() {
                         // ───────── Signup Screen ─────────
                         composable(Routes.SIGNUP) {
                             SignupScreen(
-                                onBackToLogin = {
-                                    navController.popBackStack()
-                                },
-                                onSignup = { username, email, password ->
-                                    // TODO:
-                                    // - Create account
-                                    // - Handle success / error
-                                    navController.navigate(Routes.QUESTIONNAIRE)
+                                onBackToLogin = { navController.popBackStack() },
+                                onSignupSuccess = {
+                                    // After successful signup, go to onboarding questionnaire
+                                    navController.navigate(Routes.QUESTIONNAIRE) {
+                                        popUpTo(Routes.WELCOME) { inclusive = true }
+                                    }
                                 }
                             )
                         }
