@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.calmspace.service.SoundType
 import com.calmspace.ui.player.PlaybackTrackOption
+import com.calmspace.ui.theme.MoonGold
 
 // ─────────────────────────────────────────────────────────────────────
 // Monitor Screen Components
@@ -124,7 +125,7 @@ fun MonitorRingsDisplay() {
                 imageVector = Icons.Default.Bedtime,
                 contentDescription = null,
                 modifier = Modifier.size(28.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                tint = MoonGold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Icon(

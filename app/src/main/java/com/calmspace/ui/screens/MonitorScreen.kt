@@ -120,6 +120,8 @@ fun MonitorScreen(
     var isHeadphonesConnected by remember { mutableStateOf(false) }
     var isVisualizerActive by remember { mutableStateOf(false) }
     var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
+    var maskingVolume by remember { mutableStateOf(0f) }
+    var maskingLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
     var showHeadphoneDisconnectDialog by remember { mutableStateOf(false) }
     val selectedTrackIdState by rememberUpdatedState(selectedTrackId)
 
@@ -135,10 +137,8 @@ fun MonitorScreen(
                 if (nowMs - lastVizUpdateMs < 33L) return@collect
 
                 lastVizUpdateMs = nowMs
-                monitorLevels = pushLevel(
-                    monitorLevels,
-                    dbToVisualizerLevel(db)
-                )
+                monitorLevels = pushLevel(monitorLevels, dbToVisualizerLevel(db))
+                maskingLevels = pushLevel(maskingLevels, maskingVolume)
             }
         }
         launch { svc.soundEvents.collect    { soundEvents    = it } }
@@ -151,6 +151,7 @@ fun MonitorScreen(
         launch { svc.selectedSound.collect  { selectedSound  = it } }
         launch {
             svc.automatedTargetVolume.collect { target ->
+                maskingVolume = target  // always capture for visualization
                 // Option A decision feed: only apply to ExoPlayer path.
                 // Keeps service-generated white-noise track untouched by this control loop.
                 if (!isServiceTrack(selectedTrackIdState) && isRecording) {
@@ -184,6 +185,7 @@ fun MonitorScreen(
         isVisualizerActive = isRecording
         if (!isRecording) {
             monitorLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
+            maskingLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
         }
     }
 
@@ -350,7 +352,8 @@ fun MonitorScreen(
             AmplitudeVisualizer(
                 levels = visualizerLevels,
                 modifier = Modifier.fillMaxSize(),
-                mode = AmplitudeVisualizerMode.CIRCULAR
+                mode = AmplitudeVisualizerMode.CIRCULAR,
+                secondaryLevels = if (isVisualizerActive) maskingLevels else null
             )
         }
 

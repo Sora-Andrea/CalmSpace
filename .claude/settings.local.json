@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip -o \"/c/Users/coltb/Downloads/Lora,Montserrat,Poppins,Raleway.zip\" \"*/Montserrat-Regular.ttf\" \"*/Montserrat-Medium.ttf\" \"*/Montserrat-SemiBold.ttf\" \"*/Montserrat-Bold.ttf\" \"*/Lora-Regular.ttf\" \"*/Lora-Medium.ttf\" \"*/Lora-Bold.ttf\" -d /tmp/fonts)",
+      "Bash(unzip -l \"/c/Users/coltb/Downloads/Lora,Montserrat,Poppins,Raleway.zip\")"
+    ]
+  }
+}
