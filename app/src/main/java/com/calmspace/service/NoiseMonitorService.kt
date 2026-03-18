@@ -518,7 +518,7 @@ class NoiseMonitorService : Service() {
 
                         val nowMs = System.currentTimeMillis()
 
-                        val ambientTargetVolume = if (excess > 0) {
+                        val amplitudeBasedTargetVolume = if (excess > 0) {
                             val t = (excess / 30f).coerceIn(0f, 1f)
                             (floor + sqrt(t) * (1f - floor)).coerceIn(floor, 1f)
                         } else {
@@ -551,14 +551,13 @@ class NoiseMonitorService : Service() {
                             )
                             lastAutomationSmoothingMs = nowMs
                         } else {
-                            // Legacy path: envelope-based control remains untouched for
-                            // compatibility and non-YAMNet operation.
-                            // --- Existing amplitude-driven control path ---
-                            currentMaskingVolume = if (ambientTargetVolume > currentMaskingVolume) {
-                                (currentMaskingVolume * ATTACK_SMOOTHING + ambientTargetVolume * (1f - ATTACK_SMOOTHING))
+                            // Amplitude-based control path (non-YAMNet mode).
+                            // Uses envelope/energy target and compatibility smoothing.
+                            currentMaskingVolume = if (amplitudeBasedTargetVolume > currentMaskingVolume) {
+                                (currentMaskingVolume * ATTACK_SMOOTHING + amplitudeBasedTargetVolume * (1f - ATTACK_SMOOTHING))
                                     .coerceIn(floor, 1f)
                             } else {
-                                (currentMaskingVolume * DECAY_SMOOTHING + ambientTargetVolume * (1f - DECAY_SMOOTHING))
+                                (currentMaskingVolume * DECAY_SMOOTHING + amplitudeBasedTargetVolume * (1f - DECAY_SMOOTHING))
                                     .coerceAtLeast(floor)
                             }
                         }
