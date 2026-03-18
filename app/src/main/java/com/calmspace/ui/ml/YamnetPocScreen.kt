@@ -22,6 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.calmspace.masking.MaskingBucket
+import com.calmspace.masking.YamnetLabelBucketResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -39,15 +41,6 @@ private const val MIN_WINNER_MARGIN = 0.10f
 private const val SMOOTHING_WINDOW_MS = 2000L
 private const val ATTACK_PER_MS = 0.0001f // 3% every 300ms
 private const val RELEASE_PER_MS = 0.0000334f // 1% every 300ms
-
-private enum class MaskingBucket {
-    VOICE,
-    HOUSEHOLD,
-    TRAFFIC,
-    NATURE,
-    ALERT,
-    UNKNOWN
-}
 
 private val bucketTargetOffset = mapOf(
     MaskingBucket.VOICE to 0.20f,
@@ -79,41 +72,8 @@ private data class BucketScores(
     val decisionReason: String
 )
 
-private fun labelBucket(label: String): MaskingBucket {
-    val normalized = label.lowercase().replace('_', ' ')
-
-    val voiceKeywords = listOf(
-        "speech", "conversation", "narration", "whisper", "child", "laughter", "laugh",
-        "television", "radio", "telecast", "narrative", "talk", "spoken"
-    )
-
-    val householdKeywords = listOf(
-        "vacuum", "blender", "dryer", "dishwasher", "washing machine", "microwave",
-        "air conditioner", "fan", "printer", "kitchen", "refrigerator", "toaster"
-    )
-
-    val trafficKeywords = listOf(
-        "car", "truck", "bus", "motorcycle", "engine", "traffic", "train", "aircraft",
-        "road", "vehicle", "motor"
-    )
-
-    val natureKeywords = listOf(
-        "rain", "wind", "bird", "ocean", "stream", "water", "rustling", "leaf", "waterfall",
-        "waves"
-    )
-
-    val alertKeywords = listOf(
-        "alarm", "siren", "smoke", "beep", "knock", "doorbell", "breaking", "crash"
-    )
-
-    return when {
-        voiceKeywords.any { it in normalized } -> MaskingBucket.VOICE
-        householdKeywords.any { it in normalized } -> MaskingBucket.HOUSEHOLD
-        trafficKeywords.any { it in normalized } -> MaskingBucket.TRAFFIC
-        natureKeywords.any { it in normalized } -> MaskingBucket.NATURE
-        alertKeywords.any { it in normalized } -> MaskingBucket.ALERT
-        else -> MaskingBucket.UNKNOWN
-    }
+private fun labelBucket(label: String, resolver: YamnetLabelBucketResolver): MaskingBucket {
+    return resolver.resolve(label)
 }
 
 private fun computeBucketAverages(
@@ -227,6 +187,7 @@ fun YamnetPocScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val labelBucketResolver = remember { YamnetLabelBucketResolver.fromAssets(context.assets) }
     var isRunning by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Idle") }
     var decisionReason by remember { mutableStateOf("Idle") }
@@ -287,7 +248,7 @@ fun YamnetPocScreen(
 
                     val raw = FloatArray(MaskingBucket.values().size)
                     for ((label, score) in topPredictions) {
-                        val bucket = labelBucket(label)
+                        val bucket = labelBucket(label, labelBucketResolver)
                         raw[bucket.ordinal] += score
                     }
 

@@ -24,12 +24,18 @@ import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN
 import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN_STEPS
 import com.calmspace.masking.MaskingDecisionEngine
 import com.calmspace.masking.MaskingBucket
+import com.calmspace.masking.YamnetLabelBucketResolver
 import com.calmspace.masking.smoothMaskingVolume
 import com.calmspace.service.AudioTimingConfig.MASKING_INFERENCE_MS
 import com.calmspace.service.AudioTimingConfig.MASKING_VOLUME_ATTACK_RATE_PER_MS
 import com.calmspace.service.AudioTimingConfig.MASKING_VOLUME_RELEASE_RATE_PER_MS
 import com.calmspace.service.AudioTimingConfig.MASKING_SMOOTHING_EMA_TAU_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_MIN_WINNER_SCORE
+import com.calmspace.service.AudioTimingConfig.MASKING_MIN_WINNER_MARGIN
+import com.calmspace.service.AudioTimingConfig.MASKING_TOP_PREDICTIONS
 import com.calmspace.service.AudioTimingConfig.MASKING_CONSENSUS_REQUIRED_STEPS
+import com.calmspace.service.AudioTimingConfig.MASKING_STRONG_WINNER_SCORE
+import com.calmspace.service.AudioTimingConfig.MASKING_UNKNOWN_RECOVERY_STEPS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -154,11 +160,20 @@ class NoiseMonitorService : Service() {
     @Volatile private var isMaskingAutomationEnabled = false
     private var maskingClassifier: AudioClassifier? = null
     private var maskingTensorAudio: TensorAudio? = null
+    private val yamnetLabelBucketResolver by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        YamnetLabelBucketResolver.fromAssets(this.assets)
+    }
+
     private val maskingDecisionEngine = MaskingDecisionEngine(
         smoothingTauMs = MASKING_SMOOTHING_EMA_TAU_MS,
         consensusRequiredSteps = MASKING_CONSENSUS_REQUIRED_STEPS,
+        unknownRecoverySteps = MASKING_UNKNOWN_RECOVERY_STEPS,
         attackRatePerMs = MASKING_VOLUME_ATTACK_RATE_PER_MS,
-        releaseRatePerMs = MASKING_VOLUME_RELEASE_RATE_PER_MS
+        releaseRatePerMs = MASKING_VOLUME_RELEASE_RATE_PER_MS,
+        minWinnerScore = MASKING_MIN_WINNER_SCORE,
+        minWinnerMargin = MASKING_MIN_WINNER_MARGIN,
+        strongWinnerScore = MASKING_STRONG_WINNER_SCORE,
+        labelToBucket = { label -> yamnetLabelBucketResolver.resolve(label) }
     )
 
     private var running = false
@@ -535,8 +550,6 @@ class NoiseMonitorService : Service() {
                         }
 
                         if (isMaskingAutomationEnabled) {
-                            // (YAMNet): derive target from audio classes in a
-                            // rolling 2s window and move current volume toward target.
                             // --- YAMNet-driven control path ---
                             if (latestDb > eventThreshold) {
                                 lastLoudWindowMs = nowMs
@@ -728,7 +741,7 @@ class NoiseMonitorService : Service() {
             val topPredictions = results
                 .flatMap { result -> result.categories }
                 .sortedByDescending { it.score }
-                .take(5)
+                .take(MASKING_TOP_PREDICTIONS)
                 .map { category -> category.label to category.score.toFloat() }
 
             val decision = maskingDecisionEngine.evaluate(topPredictions, System.currentTimeMillis(), baseline)

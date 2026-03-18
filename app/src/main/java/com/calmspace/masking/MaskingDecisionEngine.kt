@@ -7,14 +7,16 @@ private const val DEFAULT_SMOOTHING_EMA_TAU_MS = 700L
 private const val DEFAULT_CONSENSUS_REQUIRED_STEPS = 2
 private const val DEFAULT_ATTACK_RATE_PER_MS = 0.00030f
 private const val DEFAULT_RELEASE_RATE_PER_MS = 0.00005f
+private const val DEFAULT_MIN_WINNER_SCORE = 0.14f
+private const val DEFAULT_MIN_WINNER_MARGIN = 0.025f
+private const val DEFAULT_STRONG_WINNER_SCORE = 0.40f
+private const val DEFAULT_UNKNOWN_RECOVERY_STEPS = 2
 
 private const val DEFAULT_MASKING_BASELINE = 0.40f
 private const val MASKING_MIN_VOLUME = 0.05f
 private const val MASKING_MAX_VOLUME = 1.00f
 private const val MAX_AUTOMATIC_INCREASE = 0.25f
 private const val MAX_AUTOMATIC_DECREASE = 0.10f
-private const val MIN_WINNER_SCORE = 0.35f
-private const val MIN_WINNER_MARGIN = 0.10f
 
 private val bucketTargetOffset = mapOf(
     MaskingBucket.VOICE to 0.20f,
@@ -33,6 +35,7 @@ private val bucketDisplayNames = mapOf(
     MaskingBucket.ALERT to "Safety / Alert",
     MaskingBucket.UNKNOWN to "Unknown / Low Confidence"
 )
+private val fallbackBucketRules = YamnetLabelBucketRules.orderedRulesFromSource()
 
 enum class MaskingBucket {
     VOICE,
@@ -59,8 +62,15 @@ data class MaskingDecision(
 class MaskingDecisionEngine(
     private val smoothingTauMs: Long = DEFAULT_SMOOTHING_EMA_TAU_MS,
     private val consensusRequiredSteps: Int = DEFAULT_CONSENSUS_REQUIRED_STEPS,
+    private val unknownRecoverySteps: Int = DEFAULT_UNKNOWN_RECOVERY_STEPS,
     private val attackRatePerMs: Float = DEFAULT_ATTACK_RATE_PER_MS,
-    private val releaseRatePerMs: Float = DEFAULT_RELEASE_RATE_PER_MS
+    private val releaseRatePerMs: Float = DEFAULT_RELEASE_RATE_PER_MS,
+    private val minWinnerScore: Float = DEFAULT_MIN_WINNER_SCORE,
+    private val minWinnerMargin: Float = DEFAULT_MIN_WINNER_MARGIN,
+    private val strongWinnerScore: Float = DEFAULT_STRONG_WINNER_SCORE,
+    private val labelToBucket: (String) -> MaskingBucket = { label ->
+        YamnetLabelBucketRules.classify(label, fallbackBucketRules)
+    }
 ) {
     private val smoothedBuckets = FloatArray(MaskingBucket.values().size)
     private var hasSmoothingState = false
@@ -69,6 +79,7 @@ class MaskingDecisionEngine(
     private var pendingWinner: MaskingBucket? = null
     private var pendingWinnerCount = 0
     private var confirmedWinner = MaskingBucket.UNKNOWN
+    private var unknownHoldCount = 0
 
     private var lastTarget = DEFAULT_MASKING_BASELINE
     private var baselineVolume = DEFAULT_MASKING_BASELINE
@@ -84,9 +95,9 @@ class MaskingDecisionEngine(
     }
 
     // Audit notes:
-    // 1) Map top-5 labels into 6 buckets.
+    // 1) Map top-N labels into 6 buckets.
     // 2) Smooth scores with EMA for lower decision latency.
-    // 3) Enforce winner/margin, 2-step consensus, and priority rules.
+    // 3) Enforce winner/margin, configurable consensus, and priority rules.
     // 4) Convert winning bucket into a target volume.
     fun evaluate(
         topPredictions: List<Pair<String, Float>>,
@@ -117,12 +128,14 @@ class MaskingDecisionEngine(
         val rawWinner: MaskingBucket
         val winnerReason: String
 
-        val alertValid = alertScore >= MIN_WINNER_SCORE
+        val alertValid = alertScore >= minWinnerScore
 
-        if (alertValid && alertScore >= bestScore - MIN_WINNER_MARGIN) {
+        if (alertValid && alertScore >= bestScore - minWinnerMargin) {
             rawWinner = MaskingBucket.ALERT
             winnerReason = "Safety sound detected, reducing masking."
-        } else if (bestScore >= MIN_WINNER_SCORE && (bestScore - secondScore) >= MIN_WINNER_MARGIN && bestBucket != MaskingBucket.UNKNOWN) {
+        } else if (bestBucket != MaskingBucket.UNKNOWN && bestScore >= minWinnerScore && (
+                (bestScore - secondScore) >= minWinnerMargin || bestScore >= strongWinnerScore
+            )) {
             rawWinner = bestBucket
             winnerReason = when (rawWinner) {
                 MaskingBucket.ALERT -> "Safety sound detected, reducing masking."
@@ -173,6 +186,7 @@ class MaskingDecisionEngine(
         if (rawWinner == MaskingBucket.ALERT) {
             pendingWinner = null
             pendingWinnerCount = 0
+            unknownHoldCount = 0
             confirmedWinner = rawWinner
             return rawWinner
         }
@@ -180,25 +194,35 @@ class MaskingDecisionEngine(
         if (rawWinner == MaskingBucket.UNKNOWN) {
             pendingWinner = null
             pendingWinnerCount = 0
+            unknownHoldCount = (unknownHoldCount + 1).coerceAtMost(unknownRecoverySteps.coerceAtLeast(1))
+            if (unknownHoldCount >= unknownRecoverySteps.coerceAtLeast(1)) {
+                confirmedWinner = rawWinner
+                return rawWinner
+            }
             return confirmedWinner
         }
 
         if (rawWinner == confirmedWinner) {
             pendingWinner = null
             pendingWinnerCount = 0
+            unknownHoldCount = 0
             return confirmedWinner
         }
 
-        if (pendingWinner == rawWinner) {
-            pendingWinnerCount++
-            if (pendingWinnerCount >= consensusRequiredSteps) {
-                confirmedWinner = rawWinner
-                pendingWinner = null
-                pendingWinnerCount = 0
-            }
-        } else {
+        if (pendingWinner != rawWinner) {
             pendingWinner = rawWinner
             pendingWinnerCount = 1
+            unknownHoldCount = 0
+        } else {
+            pendingWinnerCount++
+        }
+
+        val requiredSteps = consensusRequiredSteps.coerceAtLeast(1)
+        if (pendingWinnerCount >= requiredSteps) {
+            confirmedWinner = rawWinner
+            pendingWinner = null
+            pendingWinnerCount = 0
+            unknownHoldCount = 0
         }
 
         return confirmedWinner
@@ -234,48 +258,12 @@ class MaskingDecisionEngine(
     private fun mapPredictions(topPredictions: List<Pair<String, Float>>): FloatArray {
         val raw = FloatArray(MaskingBucket.values().size)
         for ((label, score) in topPredictions) {
-            val bucket = mapLabelToBucket(label)
+            val bucket = labelToBucket(label)
             raw[bucket.ordinal] += score
         }
         return raw
     }
 
-    private fun mapLabelToBucket(label: String): MaskingBucket {
-        val normalized = label.lowercase().replace('_', ' ')
-
-        val voiceKeywords = listOf(
-            "speech", "conversation", "narration", "whisper", "child", "laughter", "laugh",
-            "television", "radio", "telecast", "narrative", "talk", "spoken"
-        )
-
-        val householdKeywords = listOf(
-            "vacuum", "blender", "dryer", "dishwasher", "washing machine", "microwave",
-            "air conditioner", "fan", "printer", "kitchen", "refrigerator", "toaster"
-        )
-
-        val trafficKeywords = listOf(
-            "car", "truck", "bus", "motorcycle", "engine", "traffic", "train", "aircraft",
-            "road", "vehicle", "motor"
-        )
-
-        val natureKeywords = listOf(
-            "rain", "wind", "bird", "ocean", "stream", "water", "rustling", "leaf", "waterfall",
-            "waves"
-        )
-
-        val alertKeywords = listOf(
-            "alarm", "siren", "smoke", "beep", "knock", "doorbell", "breaking", "crash"
-        )
-
-        return when {
-            voiceKeywords.any { it in normalized } -> MaskingBucket.VOICE
-            householdKeywords.any { it in normalized } -> MaskingBucket.HOUSEHOLD
-            trafficKeywords.any { it in normalized } -> MaskingBucket.TRAFFIC
-            natureKeywords.any { it in normalized } -> MaskingBucket.NATURE
-            alertKeywords.any { it in normalized } -> MaskingBucket.ALERT
-            else -> MaskingBucket.UNKNOWN
-        }
-    }
 }
 
 fun smoothMaskingVolume(current: Float, target: Float, deltaMs: Long): Float {
