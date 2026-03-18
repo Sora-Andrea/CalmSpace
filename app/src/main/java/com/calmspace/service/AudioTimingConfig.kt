@@ -13,6 +13,31 @@ object AudioTimingConfig {
     const val GENERATED_NOISE_HEADPHONE_FADE_IN_DURATION_MS = 1500L
     const val GENERATED_NOISE_HEADPHONE_FADE_IN_STEPS = 30
 
+
+    // YAMNet masking control tuning.
+    const val MASKING_INFERENCE_MS = 180L
+    const val MASKING_VOLUME_ATTACK_RATE_PER_MS = 0.00030f
+    const val MASKING_VOLUME_RELEASE_RATE_PER_MS = 0.00005f
+    const val MASKING_SMOOTHING_EMA_TAU_MS = 700L
+    const val MASKING_CONSENSUS_REQUIRED_STEPS = 2
+
+//tau is the time constant for the EMA smoothing
+//TAU  “how quickly old values decay and new predictions take over.”
+//With 700ms, each new frame pulls the smoothed score toward current raw score at a moderate speed instead of jumping abruptly.
+//alpha = 1 - exp(-dt / TAU)
+//TAU = MASKING_SMOOTHING_EMA_TAU_MS
+//Smaller TAU = faster reaction, less smoothing
+//Larger TAU = slower reaction, smoother output
+
+    // ---------------------------------------------------------------
+    //                      DO NOT MODIFY
+    // ---------------------------------------------------------------
+   
     // Existing calls reference this shared alias. KEEP.
     const val AMBIENT_PLAYBACK_FADE_IN_DURATION_MS = EXO_PLAYBACK_FADE_IN_DURATION_MS
+
+    // Backward-compatible tuning names kept to avoid unresolved references errors
+    // due active refactors and branch merges (FIX THIS LATER).
+    const val SMOOTHING_EMA_TAU_MS = MASKING_SMOOTHING_EMA_TAU_MS
+    const val CONSENSUS_REQUIRED_STEPS = MASKING_CONSENSUS_REQUIRED_STEPS
 }

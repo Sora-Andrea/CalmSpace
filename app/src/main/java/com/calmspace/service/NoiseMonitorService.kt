@@ -25,6 +25,11 @@ import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN
 import com.calmspace.masking.MaskingDecisionEngine
 import com.calmspace.masking.MaskingBucket
 import com.calmspace.masking.smoothMaskingVolume
+import com.calmspace.service.AudioTimingConfig.MASKING_INFERENCE_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_VOLUME_ATTACK_RATE_PER_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_VOLUME_RELEASE_RATE_PER_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_SMOOTHING_EMA_TAU_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_CONSENSUS_REQUIRED_STEPS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -92,7 +97,6 @@ class NoiseMonitorService : Service() {
         private const val SAMPLE_RATE = 44100
         private const val VISUALIZER_UPDATE_MS = 33L
         private const val STATUS_UPDATE_MS = 100L
-        private const val MASKING_INFERENCE_MS = 300L
         private const val MASKING_SILENCE_RELEASE_DELAY_MS = 2500L
         private const val MASKING_MODEL_FILENAME = "yamnet.tflite"
     }
@@ -150,7 +154,12 @@ class NoiseMonitorService : Service() {
     @Volatile private var isMaskingAutomationEnabled = false
     private var maskingClassifier: AudioClassifier? = null
     private var maskingTensorAudio: TensorAudio? = null
-    private val maskingDecisionEngine = MaskingDecisionEngine()
+    private val maskingDecisionEngine = MaskingDecisionEngine(
+        smoothingTauMs = MASKING_SMOOTHING_EMA_TAU_MS,
+        consensusRequiredSteps = MASKING_CONSENSUS_REQUIRED_STEPS,
+        attackRatePerMs = MASKING_VOLUME_ATTACK_RATE_PER_MS,
+        releaseRatePerMs = MASKING_VOLUME_RELEASE_RATE_PER_MS
+    )
 
     private var running = false
 
@@ -547,7 +556,9 @@ class NoiseMonitorService : Service() {
                             currentMaskingVolume = smoothMaskingVolume(
                                 current = currentMaskingVolume,
                                 target = _automatedTargetVolume.value,
-                                deltaMs = nowMs - lastAutomationSmoothingMs
+                                deltaMs = nowMs - lastAutomationSmoothingMs,
+                                attackRatePerMs = MASKING_VOLUME_ATTACK_RATE_PER_MS,
+                                releaseRatePerMs = MASKING_VOLUME_RELEASE_RATE_PER_MS
                             )
                             lastAutomationSmoothingMs = nowMs
                         } else {

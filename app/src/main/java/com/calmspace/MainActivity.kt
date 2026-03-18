@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val startDestination = Routes.WELCOME
+        val startDestination = Routes.MONITOR
         // Future code for auto logging in users already logged in
         //val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
         //    Routes.HOME  // User already logged in, go directly to home
