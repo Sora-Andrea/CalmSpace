@@ -23,19 +23,13 @@ import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_FADE_IN_STEP_MS
 import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN_DURATION_MS
 import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN_STEPS
 import com.calmspace.masking.MaskingDecisionEngine
+import com.calmspace.masking.MaskingDecision
 import com.calmspace.masking.MaskingBucket
 import com.calmspace.masking.YamnetLabelBucketResolver
 import com.calmspace.masking.smoothMaskingVolume
 import com.calmspace.service.AudioTimingConfig.MASKING_INFERENCE_MS
-import com.calmspace.service.AudioTimingConfig.MASKING_VOLUME_ATTACK_RATE_PER_MS
-import com.calmspace.service.AudioTimingConfig.MASKING_VOLUME_RELEASE_RATE_PER_MS
-import com.calmspace.service.AudioTimingConfig.MASKING_SMOOTHING_EMA_TAU_MS
-import com.calmspace.service.AudioTimingConfig.MASKING_MIN_WINNER_SCORE
-import com.calmspace.service.AudioTimingConfig.MASKING_MIN_WINNER_MARGIN
+import com.calmspace.service.AudioTimingConfig.MASKING_DECISION_PROFILE
 import com.calmspace.service.AudioTimingConfig.MASKING_TOP_PREDICTIONS
-import com.calmspace.service.AudioTimingConfig.MASKING_CONSENSUS_REQUIRED_STEPS
-import com.calmspace.service.AudioTimingConfig.MASKING_STRONG_WINNER_SCORE
-import com.calmspace.service.AudioTimingConfig.MASKING_UNKNOWN_RECOVERY_STEPS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -165,14 +159,7 @@ class NoiseMonitorService : Service() {
     }
 
     private val maskingDecisionEngine = MaskingDecisionEngine(
-        smoothingTauMs = MASKING_SMOOTHING_EMA_TAU_MS,
-        consensusRequiredSteps = MASKING_CONSENSUS_REQUIRED_STEPS,
-        unknownRecoverySteps = MASKING_UNKNOWN_RECOVERY_STEPS,
-        attackRatePerMs = MASKING_VOLUME_ATTACK_RATE_PER_MS,
-        releaseRatePerMs = MASKING_VOLUME_RELEASE_RATE_PER_MS,
-        minWinnerScore = MASKING_MIN_WINNER_SCORE,
-        minWinnerMargin = MASKING_MIN_WINNER_MARGIN,
-        strongWinnerScore = MASKING_STRONG_WINNER_SCORE,
+        policy = MASKING_DECISION_PROFILE,
         labelToBucket = { label -> yamnetLabelBucketResolver.resolve(label) }
     )
 
@@ -388,9 +375,13 @@ class NoiseMonitorService : Service() {
         if (enabled) {
             initMaskingClassifier()
             maskingDecisionEngine.reset(_startingVolume.value)
+            _currentMaskingBucket.value = "Listening..."
+            _currentTopPrediction.value = ""
             _automatedTargetVolume.value = _startingVolume.value
             _automatedDecisionReason.value = "YAMNet automation ready"
         } else {
+            _currentMaskingBucket.value = ""
+            _currentTopPrediction.value = ""
             _automatedDecisionReason.value = "YAMNet automation disabled"
             _automatedTargetVolume.value = _startingVolume.value
         }
@@ -551,13 +542,22 @@ class NoiseMonitorService : Service() {
 
                         if (isMaskingAutomationEnabled) {
                             // --- YAMNet-driven control path ---
-                            if (latestDb > eventThreshold) {
-                                lastLoudWindowMs = nowMs
-                                if (read > 0 && nowMs - lastInferenceMs >= MASKING_INFERENCE_MS) {
-                                    updateMaskingDecisionFromAudioWindow(buf, read, floor)
-                                    lastInferenceMs = nowMs
+                            val shouldRunMaskingInference = nowMs - lastInferenceMs >= MASKING_INFERENCE_MS
+                            if (shouldRunMaskingInference) {
+                                if (latestDb > eventThreshold && read > 0) {
+                                    lastLoudWindowMs = nowMs
+                                    updateMaskingDecisionFromAudioWindow(buf, read, floor, nowMs)
+                                } else {
+                                    applyMaskingDecisionFromPredictions(
+                                        maskingDecisionEngine.evaluate(emptyList(), nowMs, floor),
+                                        topPredictions = emptyList()
+                                    )
                                 }
-                            } else if (nowMs - lastLoudWindowMs >= MASKING_SILENCE_RELEASE_DELAY_MS &&
+                                lastInferenceMs = nowMs
+                            }
+
+                            if (latestDb <= eventThreshold &&
+                                nowMs - lastLoudWindowMs >= MASKING_SILENCE_RELEASE_DELAY_MS &&
                                 _automatedTargetVolume.value > floor
                             ) {
                                 // Long-tail decay behavior: if no relevant ambient event is
@@ -570,8 +570,8 @@ class NoiseMonitorService : Service() {
                                 current = currentMaskingVolume,
                                 target = _automatedTargetVolume.value,
                                 deltaMs = nowMs - lastAutomationSmoothingMs,
-                                attackRatePerMs = MASKING_VOLUME_ATTACK_RATE_PER_MS,
-                                releaseRatePerMs = MASKING_VOLUME_RELEASE_RATE_PER_MS
+                                attackRatePerMs = MASKING_DECISION_PROFILE.attackRatePerMs,
+                                releaseRatePerMs = MASKING_DECISION_PROFILE.releaseRatePerMs
                             )
                             lastAutomationSmoothingMs = nowMs
                         } else {
@@ -718,6 +718,8 @@ class NoiseMonitorService : Service() {
         }.onFailure {
             isMaskingAutomationEnabled = false
             _automatedDecisionReason.value = "YAMNet unavailable"
+            _currentMaskingBucket.value = ""
+            _currentTopPrediction.value = ""
         }
     }
 
@@ -730,7 +732,8 @@ class NoiseMonitorService : Service() {
     private fun updateMaskingDecisionFromAudioWindow(
         buffer: ShortArray,
         read: Int,
-        baseline: Float
+        baseline: Float,
+        decisionTimeMs: Long = System.currentTimeMillis()
     ) {
         val classifier = maskingClassifier ?: return
         val tensorAudio = maskingTensorAudio ?: return
@@ -744,20 +747,30 @@ class NoiseMonitorService : Service() {
                 .take(MASKING_TOP_PREDICTIONS)
                 .map { category -> category.label to category.score.toFloat() }
 
-            val decision = maskingDecisionEngine.evaluate(topPredictions, System.currentTimeMillis(), baseline)
-            _automatedDecisionReason.value = "${decision.displayWinner}: ${decision.reason}"
-            _currentMaskingBucket.value = decision.displayWinner
-            _currentTopPrediction.value = if (decision.winner == MaskingBucket.UNKNOWN) {
-                ""
-            } else {
-                topPredictions.firstOrNull()?.first.orEmpty()
-            }
-
-            if (decision.shouldAffectPlayback) {
-                _automatedTargetVolume.value = decision.targetVolume
-            }
+            val decision = maskingDecisionEngine.evaluate(topPredictions, decisionTimeMs, baseline)
+            applyMaskingDecisionFromPredictions(
+                decision,
+                topPredictions = topPredictions
+            )
         }.onFailure {
             _automatedDecisionReason.value = "YAMNet classification failed"
+        }
+    }
+
+    private fun applyMaskingDecisionFromPredictions(
+        decision: MaskingDecision,
+        topPredictions: List<Pair<String, Float>> = emptyList()
+    ) {
+        _automatedDecisionReason.value = "${decision.displayWinner}: ${decision.reason}"
+        _currentMaskingBucket.value = decision.displayWinner
+        _currentTopPrediction.value = if (decision.winner == MaskingBucket.UNKNOWN) {
+            ""
+        } else {
+            topPredictions.firstOrNull()?.first.orEmpty()
+        }
+
+        if (decision.shouldAffectPlayback) {
+            _automatedTargetVolume.value = decision.targetVolume
         }
     }
 

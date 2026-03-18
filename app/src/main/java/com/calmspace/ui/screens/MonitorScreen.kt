@@ -290,7 +290,11 @@ fun MonitorScreen(
     // Derived UI state
     // ─────────────────────────────────────────────────────────────────
 
-    val bucketLabel = if (isRecording) currentBucket.ifBlank { "Initializing..." } else "No session active"
+    val bucketLabel = if (isRecording) {
+        currentBucket.ifBlank { "Listening..." }
+    } else {
+        "No session active"
+    }
     val topPredictionText = if (isRecording) topPrediction else ""
     val displayLine = if (topPredictionText.isBlank()) {
         bucketLabel
