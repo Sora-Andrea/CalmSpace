@@ -18,7 +18,10 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
-import com.calmspace.service.AudioFadeConfig.AMBIENT_PLAYBACK_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_FADE_IN_STEP_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN_STEPS
 import com.calmspace.masking.MaskingDecisionEngine
 import com.calmspace.masking.MaskingBucket
 import com.calmspace.masking.smoothMaskingVolume
@@ -92,7 +95,6 @@ class NoiseMonitorService : Service() {
         private const val MASKING_INFERENCE_MS = 300L
         private const val MASKING_SILENCE_RELEASE_DELAY_MS = 2500L
         private const val MASKING_MODEL_FILENAME = "yamnet.tflite"
-        private const val GENERATED_NOISE_FADE_IN_STEP_MS = 16L
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -288,7 +290,7 @@ class NoiseMonitorService : Service() {
             val startedAt = SystemClock.elapsedRealtime()
             while (isNoiseThreadRunning.get()) {
                 val elapsed = SystemClock.elapsedRealtime() - startedAt
-                val fraction = (elapsed.toFloat() / AMBIENT_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+                val fraction = (elapsed.toFloat() / GENERATED_NOISE_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
                 fadeInGain = clampedTarget * (fraction * fraction)
                 applyNoiseTrackVolume()
 
@@ -524,7 +526,7 @@ class NoiseMonitorService : Service() {
                         }
 
                         if (isMaskingAutomationEnabled) {
-                            // Option A (YAMNet): derive target from audio classes in a
+                            // (YAMNet): derive target from audio classes in a
                             // rolling 2s window and move current volume toward target.
                             // --- YAMNet-driven control path ---
                             if (latestDb > eventThreshold) {
@@ -656,8 +658,8 @@ class NoiseMonitorService : Service() {
     private fun startFadeIn(targetVolume: Float) {
         isHeadphoneFadeInActive = true
         Thread {
-            val steps = 30
-            val stepMs = 50L
+            val steps = GENERATED_NOISE_HEADPHONE_FADE_IN_STEPS
+            val stepMs = GENERATED_NOISE_HEADPHONE_FADE_IN_DURATION_MS / steps.toLong()
             audioTrack?.setVolume(0f)
             for (i in 1..steps) {
                 Thread.sleep(stepMs)

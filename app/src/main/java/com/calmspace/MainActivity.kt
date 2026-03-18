@@ -51,7 +51,8 @@ import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import com.calmspace.service.AudioFadeConfig.AMBIENT_PLAYBACK_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.EXO_PLAYBACK_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.EXO_PLAYBACK_FADE_IN_STEP_MS
 import kotlin.math.log10
 import kotlin.math.sqrt
 
@@ -503,13 +504,13 @@ class MainActivity : ComponentActivity() {
             try {
                 while (isActive) {
                     val elapsedMs = SystemClock.elapsedRealtime() - startMs
-                val fraction = (elapsedMs.toFloat() / AMBIENT_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+                    val fraction = (elapsedMs.toFloat() / EXO_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
                     // Quadratic easing keeps the initial rise gentle and avoids jumpy starts.
                     val easedFraction = (fraction * fraction).coerceIn(0f, 1f)
                     player.volume = (clampedTarget * easedFraction).coerceIn(0f, 1f)
 
                     if (fraction >= 1f) break
-                    delay(16L)
+                    delay(EXO_PLAYBACK_FADE_IN_STEP_MS)
                 }
             } finally {
                 player.volume = pendingExoPlayerVolume.coerceIn(0f, 1f)
