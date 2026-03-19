@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -59,6 +60,7 @@ private const val SERVICE_RMS_DB_REFERENCE = 90f
 @Composable
 fun MonitorScreen(
     micLevels: List<Float>,
+    playbackLevels: List<Float>,
     trackOptions: List<PlaybackTrackOption>,
     selectedTrackId: String,
     isServiceTrack: (String) -> Boolean,
@@ -311,6 +313,24 @@ fun MonitorScreen(
     }
     val visualizerLevels = if (isVisualizerActive) monitorLevels else inactiveVisualizerLevels
 
+    val playbackSourceLevels = if (isServiceTrack(selectedTrackId)) {
+        maskingLevels
+    } else {
+        playbackLevels
+    }
+
+    val playbackOverlayLevels = if (isVisualizerActive) {
+        when {
+            playbackSourceLevels.isEmpty() -> null
+            playbackSourceLevels.size == visualizerLevels.size -> playbackSourceLevels
+            else -> List(visualizerLevels.size) { index ->
+                playbackSourceLevels[index % playbackSourceLevels.size]
+            }
+        }
+    } else {
+        null
+    }
+
     // TODO: Track actual session start time and calculate elapsed
     val sleepTime = if (isRecording) "0:00" else "8:42"
 
@@ -361,7 +381,17 @@ fun MonitorScreen(
                 levels = visualizerLevels,
                 modifier = Modifier.fillMaxSize(),
                 mode = AmplitudeVisualizerMode.CIRCULAR,
-                secondaryLevels = if (isVisualizerActive) maskingLevels else null
+                barColor = MaterialTheme.colorScheme.primary,
+                secondaryLevels = playbackOverlayLevels,
+                secondaryBarColor = brighterColor(
+                    MaterialTheme.colorScheme.primary,
+                    0.26f
+                ),
+                secondaryAngleOffsetDeg = if (visualizerLevels.isNotEmpty()) {
+                    360f / visualizerLevels.size.toFloat() / 2f
+                } else {
+                    0f
+                }
             )
         }
 
@@ -491,6 +521,19 @@ fun MonitorScreen(
             )
         }
     }
+}
+
+private fun brighterColor(color: Color, strength: Float = 0.2f): Color {
+    val safeStrength = strength.coerceIn(0f, 1f)
+    val lighten = { component: Float ->
+        (component + (1f - component) * safeStrength).coerceIn(0f, 1f)
+    }
+    return Color(
+        red = lighten(color.red),
+        green = lighten(color.green),
+        blue = lighten(color.blue),
+        alpha = color.alpha
+    )
 }
 
 private fun dbToVisualizerLevel(dbfs: Float): Float {
