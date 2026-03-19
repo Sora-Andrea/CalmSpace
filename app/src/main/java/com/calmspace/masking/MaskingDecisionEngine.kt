@@ -87,7 +87,7 @@ class MaskingDecisionEngine(
     }
 
     // Audit notes:
-    // 1) Map top-N labels into 6 buckets.
+    // 1) Map top-N labels into masking buckets.
     // 2) Smooth scores with EMA for lower decision latency.
     // 3) Enforce winner/margin, configurable consensus, and priority rules.
     // 4) Convert winning bucket into a target volume.
@@ -139,25 +139,18 @@ class MaskingDecisionEngine(
             val second = mappedRanking.getOrElse(1) { mappedRanking[0] }
             val bestBucket = MaskingBucket.values()[best]
             secondBucket = MaskingBucket.values()[second]
-            val alertScore = smoothed[MaskingBucket.ALERT.ordinal]
             bestScore = smoothed[best]
             secondScore = smoothed[second]
 
-            val alertValid = alertScore >= policy.minWinnerScore
-
-            if (alertValid && alertScore >= bestScore - policy.minWinnerMargin) {
-                rawWinner = MaskingBucket.ALERT
-                winnerReason = "Safety sound detected, reducing masking."
-            } else if (bestScore >= policy.minWinnerScore &&
+            if (bestScore >= policy.minWinnerScore &&
                 (mappedRanking.size == 1 ||
                         (bestScore - secondScore) >= policy.minWinnerMargin ||
                         bestScore >= policy.strongWinnerScore)
             ) {
                 rawWinner = bestBucket
                 winnerReason = when (rawWinner) {
-                    MaskingBucket.ALERT -> "Safety sound detected, reducing masking."
                     MaskingBucket.VOICE -> "Speech detected, increasing masking quickly."
-                    MaskingBucket.TRAFFIC -> "Traffic detected, increasing masking."
+                    MaskingBucket.TRAFFIC -> "Traffic detected (including alert-like sounds), increasing masking."
                     MaskingBucket.HOUSEHOLD -> "Household noise detected, moderate increase."
                     MaskingBucket.NATURE -> "Nature-like sounds detected, keeping baseline."
                     else -> "Holding in place."
@@ -215,14 +208,6 @@ class MaskingDecisionEngine(
         rawWinner: MaskingBucket,
         nowMs: Long
     ): MaskingBucket {
-        if (rawWinner == MaskingBucket.ALERT) {
-            pendingWinner = null
-            pendingWinnerCount = 0
-            unknownHoldCount = 0
-            confirmedWinner = rawWinner
-            return rawWinner
-        }
-
         if (rawWinner == MaskingBucket.UNKNOWN) {
             if (confirmedWinner != MaskingBucket.UNKNOWN && canKeepWinnerPastTimeout(nowMs)) {
                 return confirmedWinner
@@ -293,7 +278,11 @@ class MaskingDecisionEngine(
     private fun mapPredictions(topPredictions: List<Pair<String, Float>>): FloatArray {
         val raw = FloatArray(MaskingBucket.values().size)
         for ((label, score) in topPredictions) {
-            val bucket = labelToBucket(label)
+            val mapped = labelToBucket(label)
+            val bucket = when (mapped) {
+                MaskingBucket.ALERT -> MaskingBucket.TRAFFIC
+                else -> mapped
+            }
             raw[bucket.ordinal] += score
         }
         return raw

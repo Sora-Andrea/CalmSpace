@@ -256,8 +256,8 @@ fun YamnetPocScreen(
         Text("Decision reason: $statusDetail")
         if (activeBucket != MaskingBucket.UNKNOWN) {
             Text(
-                if (activeBucket == MaskingBucket.ALERT) {
-                    "Action: Freeze/Reduce masking for safety."
+                if (activeBucket == MaskingBucket.TRAFFIC) {
+                    "Action: Move toward target with fast attack + slow release."
                 } else {
                     "Action: Move toward target with fast attack + slow release."
                 }

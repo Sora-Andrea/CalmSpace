@@ -3,25 +3,6 @@ package com.calmspace.masking
 import java.util.Locale
 
 private val RULES_SOURCE = """
-ALERT,alarm
-ALERT,siren
-ALERT,fire alarm
-ALERT,smoke detector
-ALERT,car alarm
-ALERT,ambulance
-ALERT,fire engine
-ALERT,police
-ALERT,knock
-ALERT,doorbell
-ALERT,crash
-ALERT,gunshot
-ALERT,explosion
-ALERT,scream
-ALERT,screaming
-ALERT,yell
-ALERT,toot
-ALERT,alert
-ALERT,bells
 VOICE,speech
 VOICE,conversation
 VOICE,narration
@@ -39,7 +20,6 @@ VOICE,voice
 VOICE,babble
 VOICE,singing
 VOICE,chuckle
-VOICE,bell
 VOICE,yodel
 VOICE,chant
 VOICE,groan
@@ -95,6 +75,20 @@ TRAFFIC,tire
 TRAFFIC,street
 TRAFFIC,driving
 TRAFFIC,highway
+TRAFFIC,alarm
+TRAFFIC,siren
+TRAFFIC,fire alarm
+TRAFFIC,smoke detector
+TRAFFIC,car alarm
+TRAFFIC,ambulance
+TRAFFIC,fire engine
+TRAFFIC,police
+TRAFFIC,knock
+TRAFFIC,doorbell
+TRAFFIC,crash
+TRAFFIC,gunshot
+TRAFFIC,explosion
+TRAFFIC,alert
 TRAFFIC,bell
 HOUSEHOLD,vacuum
 HOUSEHOLD,blender

@@ -20,7 +20,7 @@ data class MaskingDecisionPolicy(
         MaskingBucket.HOUSEHOLD to 0.12f,
         MaskingBucket.TRAFFIC to 0.15f,
         MaskingBucket.NATURE to 0.00f,
-        MaskingBucket.ALERT to -0.05f,
+        MaskingBucket.ALERT to 0.15f,
         MaskingBucket.UNKNOWN to 0.00f
     )
 )
@@ -34,7 +34,7 @@ fun maskingBucketDisplayName(bucket: MaskingBucket): String = when (bucket) {
     MaskingBucket.HOUSEHOLD -> "Household Noise"
     MaskingBucket.TRAFFIC -> "Outdoor / Traffic"
     MaskingBucket.NATURE -> "Natural Ambient"
-    MaskingBucket.ALERT -> "Safety / Alert"
+    MaskingBucket.ALERT -> "Outdoor / Traffic"
     MaskingBucket.UNKNOWN -> "Unknown / Low Confidence"
 }
 
