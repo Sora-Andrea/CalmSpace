@@ -15,18 +15,33 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import com.calmspace.sleep.SleepScheduleManager
 import com.calmspace.ui.components.AppIcons
+import com.calmspace.ui.theme.AppTheme
 
 // ─────────────────────────────────────────────
 // Settings Screen
 // User preferences, notifications, audio, general settings
 // ─────────────────────────────────────────────
 
+private val themeDisplayNames = mapOf(
+    AppTheme.DEEP_WATER to "Deep Water",
+    AppTheme.OCEAN      to "Ocean",
+    AppTheme.FOREST     to "Forest",
+    AppTheme.SUNSET     to "Sunset",
+    AppTheme.SUNRISE    to "Sunrise"
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigateToPrivacyPolicy: () -> Unit = {},
-    onNavigateToMediaPlayer: () -> Unit = {}
+    onNavigateToMediaPlayer: () -> Unit = {},
+    currentTheme: AppTheme = AppTheme.DEEP_WATER,
+    onThemeSelected: (AppTheme) -> Unit = {}
 ) {
+    val context = LocalContext.current
 
     // ─────────────────────────────────────────────
     // Placeholder State
@@ -55,9 +70,25 @@ fun SettingsScreen(
     var recordingQuality by remember { mutableStateOf("High") }
     var autoplaySounds by remember { mutableStateOf(false) }
 
-    // General
-    // TODO: Wire to app settings in Room
-    var appTheme by remember { mutableStateOf("Dark") }
+    var showThemePicker by remember { mutableStateOf(false) }
+
+    // Schedule state — loaded from SharedPreferences
+    var scheduleEnabled  by remember { mutableStateOf(false) }
+    var bedtimeHour      by remember { mutableStateOf(22) }
+    var bedtimeMinute    by remember { mutableStateOf(30) }
+    var wakeHour         by remember { mutableStateOf(7) }
+    var wakeMinute       by remember { mutableStateOf(0) }
+    var showBedtimePicker by remember { mutableStateOf(false) }
+    var showWakePicker    by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+        scheduleEnabled = prefs.getBoolean("schedule_enabled", false)
+        bedtimeHour     = prefs.getInt("bedtime_hour",    22)
+        bedtimeMinute   = prefs.getInt("bedtime_minute",  30)
+        wakeHour        = prefs.getInt("wake_hour",        7)
+        wakeMinute      = prefs.getInt("wake_minute",      0)
+    }
 
     Column(
         modifier = Modifier
@@ -163,6 +194,109 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // ───────── SCHEDULE ─────────
+        SectionHeader(title = "SCHEDULE")
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SettingsToggleItem(
+            icon = AppIcons.Alarm,
+            title = "Enable Schedule",
+            checked = scheduleEnabled,
+            onToggle = { enabled ->
+                scheduleEnabled = enabled
+                val prefs = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("schedule_enabled", enabled).apply()
+                if (enabled) {
+                    SleepScheduleManager.scheduleBedtimeReminder(context, bedtimeHour, bedtimeMinute)
+                    SleepScheduleManager.scheduleWakeStop(context, wakeHour, wakeMinute)
+                } else {
+                    SleepScheduleManager.cancelBedtimeReminder(context)
+                    SleepScheduleManager.cancelWakeStop(context)
+                }
+            }
+        )
+
+        SettingsItem(
+            icon = AppIcons.Nightlight,
+            title = "Bedtime",
+            value = formatTime(bedtimeHour, bedtimeMinute),
+            onClick = { showBedtimePicker = true }
+        )
+
+        SettingsItem(
+            icon = AppIcons.Alarm,
+            title = "Wake Time",
+            value = formatTime(wakeHour, wakeMinute),
+            onClick = { showWakePicker = true }
+        )
+
+        // Bedtime time picker dialog
+        if (showBedtimePicker) {
+            val state = rememberTimePickerState(
+                initialHour = bedtimeHour,
+                initialMinute = bedtimeMinute,
+                is24Hour = false
+            )
+            AlertDialog(
+                onDismissRequest = { showBedtimePicker = false },
+                title = { Text("Bedtime") },
+                text = { TimePicker(state = state) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        bedtimeHour   = state.hour
+                        bedtimeMinute = state.minute
+                        val prefs = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putInt("bedtime_hour",   state.hour)
+                            .putInt("bedtime_minute", state.minute)
+                            .apply()
+                        if (scheduleEnabled) {
+                            SleepScheduleManager.scheduleBedtimeReminder(context, state.hour, state.minute)
+                        }
+                        showBedtimePicker = false
+                    }) { Text("OK") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBedtimePicker = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // Wake time picker dialog
+        if (showWakePicker) {
+            val state = rememberTimePickerState(
+                initialHour = wakeHour,
+                initialMinute = wakeMinute,
+                is24Hour = false
+            )
+            AlertDialog(
+                onDismissRequest = { showWakePicker = false },
+                title = { Text("Wake Time") },
+                text = { TimePicker(state = state) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        wakeHour   = state.hour
+                        wakeMinute = state.minute
+                        val prefs = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putInt("wake_hour",   state.hour)
+                            .putInt("wake_minute", state.minute)
+                            .apply()
+                        if (scheduleEnabled) {
+                            SleepScheduleManager.scheduleWakeStop(context, state.hour, state.minute)
+                        }
+                        showWakePicker = false
+                    }) { Text("OK") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showWakePicker = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         // ───────── NOTIFICATIONS ─────────
         SectionHeader(title = "NOTIFICATIONS")
 
@@ -236,13 +370,55 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // TODO: Navigate to theme picker (Light/Dark/System)
         SettingsItem(
             icon = AppIcons.Palette,
             title = "App Appearance",
-            value = appTheme,
-            onClick = { }
+            value = themeDisplayNames[currentTheme] ?: currentTheme.name,
+            onClick = { showThemePicker = true }
         )
+
+        if (showThemePicker) {
+            AlertDialog(
+                onDismissRequest = { showThemePicker = false },
+                title = { Text("Choose Theme") },
+                text = {
+                    Column {
+                        AppTheme.entries.forEach { theme ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onThemeSelected(theme)
+                                        showThemePicker = false
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = themeDisplayNames[theme] ?: theme.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (theme == currentTheme) FontWeight.Bold else FontWeight.Normal
+                                )
+                                if (theme == currentTheme) {
+                                    Icon(
+                                        imageVector = AppIcons.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showThemePicker = false }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
 
         // TODO: Navigate to Do Not Disturb settings
         SettingsItem(
@@ -320,6 +496,16 @@ fun SettingsScreen(
 // ─────────────────────────────────────────────
 // Section Header Component
 // ─────────────────────────────────────────────
+
+private fun formatTime(hour: Int, minute: Int): String {
+    val h12 = when {
+        hour == 0  -> 12
+        hour > 12  -> hour - 12
+        else       -> hour
+    }
+    val amPm = if (hour < 12) "AM" else "PM"
+    return "%d:%02d %s".format(h12, minute, amPm)
+}
 
 @Composable
 fun SectionHeader(title: String) {

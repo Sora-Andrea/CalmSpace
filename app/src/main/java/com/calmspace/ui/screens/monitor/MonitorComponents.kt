@@ -18,6 +18,12 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -30,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlin.math.PI
+import kotlin.math.sin
 import com.calmspace.service.SoundType
 import com.calmspace.ui.player.PlaybackTrackOption
 import com.calmspace.ui.theme.MoonGold
@@ -88,7 +96,10 @@ fun RecordingStatusPill(isRecording: Boolean, isHeadphonesConnected: Boolean = f
 // TODO: Animate rings in response to real-time ambient noise levels.
 
 @Composable
-fun MonitorRingsDisplay() {
+fun MonitorRingsDisplay(
+    isRecording: Boolean = false,
+    amplitude: Float = 0f
+) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(200.dp)
@@ -127,12 +138,52 @@ fun MonitorRingsDisplay() {
                 modifier = Modifier.size(28.dp),
                 tint = MoonGold
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Icon(
-                imageVector = Icons.Default.GraphicEq,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            Spacer(modifier = Modifier.height(6.dp))
+            WaveBars(isActive = isRecording, amplitude = amplitude)
+        }
+    }
+}
+
+// ───────── Wave Bars ─────────
+// Animated bars beneath the moon. Bars phase-shift left→right and scale
+// with live amplitude when recording is active; flatline when inactive.
+
+@Composable
+private fun WaveBars(
+    isActive: Boolean,
+    amplitude: Float,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "waveBars")
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1400, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "wavePhase"
+    )
+
+    val barCount = 9
+    val barColor = MaterialTheme.colorScheme.primary
+    val flooredAmplitude = amplitude.coerceIn(0f, 1f) * 0.85f + 0.15f
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        for (i in 0 until barCount) {
+            val offset = (i.toFloat() / barCount.toFloat()) * (2f * PI).toFloat()
+            val sinVal = ((sin((phase + offset).toDouble()) + 1.0) / 2.0).toFloat()
+            val heightDp = if (isActive) 2.dp + (14.dp * sinVal * flooredAmplitude) else 2.dp
+            val alpha = if (isActive) 0.55f + sinVal * 0.45f else 0.2f
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(heightDp)
+                    .background(barColor.copy(alpha = alpha), RoundedCornerShape(2.dp))
             )
         }
     }
