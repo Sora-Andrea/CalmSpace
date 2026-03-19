@@ -17,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -52,8 +53,13 @@ import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import com.calmspace.service.AudioFadeConfig.AMBIENT_PLAYBACK_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.EXO_PLAYBACK_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.EXO_PLAYBACK_FADE_IN_STEP_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_DUCKING_FACTOR
+import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MAX
+import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MIN
 import kotlin.math.log10
+import kotlin.math.max
 import kotlin.math.sqrt
 
 // ─────────────────────────────────────────────
@@ -101,9 +107,13 @@ class MainActivity : ComponentActivity() {
     private val availablePlaybackTracks = PrecomputedPlaybackTracks.tracks
     private val playbackTrackOptions = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
     private val selectedTrackIdState = mutableStateOf(availablePlaybackTracks.firstOrNull()?.id.orEmpty())
-    private val playbackLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val playbackLevelsState = mutableStateListOf<Float>().apply {
+        repeat(VISUALIZER_BAR_COUNT) { add(0f) }
+    }
     private val playbackDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
-    private val micLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val micLevelsState = mutableStateListOf<Float>().apply {
+        repeat(VISUALIZER_BAR_COUNT) { add(0f) }
+    }
     private val micDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
     private val isMicRunningState = mutableStateOf(false)
     private val hasMicPermissionState = mutableStateOf(false)
@@ -112,6 +122,7 @@ class MainActivity : ComponentActivity() {
     private var playbackFadeInJob: Job? = null
     private var isExoFadeInInProgress = false
     private var pendingExoPlayerVolume = 1f
+    private var exoPlaybackBaselineVolume = 1f
     private var loadedTrackId: String? = null
     private var micAudioRecord: AudioRecord? = null
     private var micCaptureJob: Job? = null
@@ -194,13 +205,9 @@ class MainActivity : ComponentActivity() {
                         // ───────── Login Screen ─────────
                         composable(Routes.LOGIN) {
                             LoginScreen(
-                                onBack = {
-                                    navController.popBackStack()
-                                },
-                                onLogin = { email, password ->
-                                    // TODO:
-                                    // - Authenticate user
-                                    // - Handle success / error
+                                onSignupInstead = { navController.navigate(Routes.SIGNUP) },
+                                onLoginSuccess = {
+                                    // Clear back stack and go to home (or questionnaire if needed)
                                     navController.navigate(Routes.HOME) {
                                         popUpTo(Routes.WELCOME) { inclusive = true }
                                     }
@@ -211,14 +218,12 @@ class MainActivity : ComponentActivity() {
                         // ───────── Signup Screen ─────────
                         composable(Routes.SIGNUP) {
                             SignupScreen(
-                                onBackToLogin = {
-                                    navController.popBackStack()
-                                },
-                                onSignup = { username, email, password ->
-                                    // TODO:
-                                    // - Create account
-                                    // - Handle success / error
-                                    navController.navigate(Routes.QUESTIONNAIRE)
+                                onBackToLogin = { navController.popBackStack() },
+                                onSignupSuccess = {
+                                    // After successful signup, go to onboarding questionnaire
+                                    navController.navigate(Routes.QUESTIONNAIRE) {
+                                        popUpTo(Routes.WELCOME) { inclusive = true }
+                                    }
                                 }
                             )
                         }
@@ -299,7 +304,8 @@ class MainActivity : ComponentActivity() {
                             }
 
                             MonitorScreen(
-                                micLevels = micLevelsState.value,
+                                micLevels = micLevelsState,
+                                playbackLevels = playbackLevelsState,
                                 trackOptions = monitorTrackOptions,
                                 selectedTrackId = selectedMonitorTrackIdState.value,
                                 isServiceTrack = isServiceTrack,
@@ -334,6 +340,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onTrackVolumeChange = { volume ->
                                     if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
+                                        exoPlaybackBaselineVolume = volume.coerceIn(0f, 1f)
                                         if (!isExoFadeInInProgress) {
                                             exoPlayer?.volume = volume
                                         } else {
@@ -346,16 +353,17 @@ class MainActivity : ComponentActivity() {
                                     // only drives ExoPlayer when the selected ambient
                                     // source is microphone/asset playback.
                                     if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
+                                        val dampened = dampenExoTargetWithPlaybackLoudness(volume)
                                         if (isExoFadeInInProgress) {
-                                            pendingExoPlayerVolume = volume
+                                            pendingExoPlayerVolume = dampened
                                         } else {
-                                            exoPlayer?.volume = volume
+                                            exoPlayer?.volume = dampened
                                         }
                                     }
                                 },
                                 onStopRecording = {
                                     stopLoopPlayback()
-                                    micLevelsState.value = emptyLevels()
+                                    resetLevelHistory(micLevelsState)
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
                                     navController.navigate(Routes.HOME) {
                                         popUpTo(Routes.MONITOR) { inclusive = true }
@@ -402,10 +410,10 @@ class MainActivity : ComponentActivity() {
                                 isPlaying = isLoopPlayingState.value,
                                 trackOptions = playbackTrackOptions,
                                 selectedTrackId = selectedTrackIdState.value,
-                                playerLevels = playbackLevelsState.value,
+                                playerLevels = playbackLevelsState,
                                 playbackDbfs = playbackDbfsState.value,
                                 isMicRunning = isMicRunningState.value,
-                                micLevels = micLevelsState.value,
+                                micLevels = micLevelsState,
                                 micDbfs = micDbfsState.value,
                                 hasMicPermission = hasMicPermissionState.value,
                                 onTrackSelected = { trackId -> selectPlaybackTrack(trackId) },
@@ -494,7 +502,7 @@ class MainActivity : ComponentActivity() {
         exoPlayer?.seekToDefaultPosition()
         isLoopPlayingState.value = false
         stopPlaybackVisualizerSync()
-        playbackLevelsState.value = emptyLevels()
+        resetLevelHistory(playbackLevelsState)
         playbackDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
@@ -509,6 +517,7 @@ class MainActivity : ComponentActivity() {
     private fun startLoopPlaybackWithFadeIn(targetVolume: Float) {
         val player = exoPlayer ?: return
         val clampedTarget = targetVolume.coerceIn(0f, 1f)
+        exoPlaybackBaselineVolume = clampedTarget
         playbackFadeInJob?.cancel()
         pendingExoPlayerVolume = clampedTarget
 
@@ -522,13 +531,13 @@ class MainActivity : ComponentActivity() {
             try {
                 while (isActive) {
                     val elapsedMs = SystemClock.elapsedRealtime() - startMs
-                val fraction = (elapsedMs.toFloat() / AMBIENT_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+                    val fraction = (elapsedMs.toFloat() / EXO_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
                     // Quadratic easing keeps the initial rise gentle and avoids jumpy starts.
                     val easedFraction = (fraction * fraction).coerceIn(0f, 1f)
                     player.volume = (clampedTarget * easedFraction).coerceIn(0f, 1f)
 
                     if (fraction >= 1f) break
-                    delay(16L)
+                    delay(EXO_PLAYBACK_FADE_IN_STEP_MS)
                 }
             } finally {
                 player.volume = pendingExoPlayerVolume.coerceIn(0f, 1f)
@@ -552,10 +561,7 @@ class MainActivity : ComponentActivity() {
                         durationMs = player.duration
                     )
                     playbackDbfsState.value = dbfs
-                    playbackLevelsState.value = pushLevel(
-                        playbackLevelsState.value,
-                        dbfsToVisualizerLevel(dbfs)
-                    )
+                    pushLevel(playbackLevelsState, dbfsToVisualizerLevel(dbfs))
                     lastSyncMs = nowMs
                 }
                 awaitFrame()
@@ -569,7 +575,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshPlaybackLevelsFromSelectedTrack(startIndex: Int) {
-        playbackLevelsState.value = emptyLevels()
+        resetLevelHistory(playbackLevelsState)
         playbackDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
@@ -647,10 +653,7 @@ class MainActivity : ComponentActivity() {
                     val micDbfs = linearToDbfs(linearLevel)
                     runOnUiThread {
                         micDbfsState.value = micDbfs
-                        micLevelsState.value = pushLevel(
-                            micLevelsState.value,
-                            dbfsToVisualizerLevel(micDbfs)
-                        )
+                        pushLevel(micLevelsState, dbfsToVisualizerLevel(micDbfs))
                     }
                 }
             }
@@ -670,7 +673,7 @@ class MainActivity : ComponentActivity() {
         }
         micAudioRecord = null
         isMicRunningState.value = false
-        micLevelsState.value = emptyLevels()
+        resetLevelHistory(micLevelsState)
         micDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
@@ -708,9 +711,17 @@ class MainActivity : ComponentActivity() {
         return (rms / 32767.0).toFloat().coerceIn(0f, 1f)
     }
 
-    private fun pushLevel(history: List<Float>, level: Float): List<Float> {
-        val trimmed = if (history.size >= VISUALIZER_BAR_COUNT) history.drop(1) else history
-        return trimmed + level
+    private fun pushLevel(history: MutableList<Float>, level: Float) {
+        if (history.isNotEmpty()) {
+            history.removeAt(0)
+        }
+        history.add(level)
+    }
+
+    private fun resetLevelHistory(history: MutableList<Float>) {
+        for (i in history.indices) {
+            history[i] = 0f
+        }
     }
 
     private fun linearToDbfs(linear: Float): Float {
@@ -725,11 +736,25 @@ class MainActivity : ComponentActivity() {
             (VISUALIZER_DB_CEILING - VISUALIZER_DB_FLOOR)).coerceIn(0f, 1f)
     }
 
+    private fun dampenExoTargetWithPlaybackLoudness(target: Float): Float {
+        val clampedBaseline = exoPlaybackBaselineVolume.coerceIn(0f, 1f)
+        val clampedTarget = target.coerceIn(0f, 1f)
+        val loudnessRange = MASKING_AUTOMATION_REFERENCE_DB_MAX - MASKING_AUTOMATION_REFERENCE_DB_MIN
+
+        if (loudnessRange <= 0f) {
+            return clampedTarget
+        }
+
+        val normalizedLoudness = ((playbackDbfsState.value - MASKING_AUTOMATION_REFERENCE_DB_MIN) / loudnessRange).coerceIn(0f, 1f)
+        val duckAmount = normalizedLoudness * MASKING_AUTOMATION_DUCKING_FACTOR
+        val targetIncrease = max(0f, clampedTarget - clampedBaseline)
+        return (clampedBaseline + targetIncrease * (1f - duckAmount)).coerceIn(clampedBaseline, 1f)
+    }
+
     private fun lerp(start: Float, end: Float, fraction: Float): Float {
         return start + (end - start) * fraction
     }
 
-    private fun emptyLevels(): List<Float> = List(VISUALIZER_BAR_COUNT) { 0f }
 
     override fun onDestroy() {
         stopMicrophoneVisualizer()

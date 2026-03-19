@@ -1,34 +1,7 @@
 package com.calmspace.masking
 
+import kotlin.math.exp
 import kotlin.math.max
-
-private const val DEFAULT_MASKING_BASELINE = 0.40f
-private const val MASKING_MIN_VOLUME = 0.05f
-private const val MASKING_MAX_VOLUME = 1.00f
-private const val MAX_AUTOMATIC_INCREASE = 0.25f
-private const val MAX_AUTOMATIC_DECREASE = 0.10f
-private const val MIN_WINNER_SCORE = 0.35f
-private const val MIN_WINNER_MARGIN = 0.10f
-
-private const val SMOOTHING_WINDOW_MS = 2000L
-
-private val bucketTargetOffset = mapOf(
-    MaskingBucket.VOICE to 0.20f,
-    MaskingBucket.HOUSEHOLD to 0.12f,
-    MaskingBucket.TRAFFIC to 0.15f,
-    MaskingBucket.NATURE to 0.00f,
-    MaskingBucket.ALERT to -0.05f,
-    MaskingBucket.UNKNOWN to 0.00f
-)
-
-private val bucketDisplayNames = mapOf(
-    MaskingBucket.VOICE to "Speech / Human Activity",
-    MaskingBucket.HOUSEHOLD to "Household Noise",
-    MaskingBucket.TRAFFIC to "Outdoor / Traffic",
-    MaskingBucket.NATURE to "Natural Ambient",
-    MaskingBucket.ALERT to "Safety / Alert",
-    MaskingBucket.UNKNOWN to "Unknown / Low Confidence"
-)
 
 enum class MaskingBucket {
     VOICE,
@@ -52,28 +25,76 @@ data class MaskingDecision(
     val displayWinner: String
 )
 
-class MaskingDecisionEngine {
-    private val history = mutableListOf<Pair<Long, FloatArray>>() 
-    private var lastTarget = DEFAULT_MASKING_BASELINE
-    private var baselineVolume = DEFAULT_MASKING_BASELINE
+class MaskingDecisionEngine(
+    private val policy: MaskingDecisionPolicy = MaskingDecisionProfiles.V1,
+    private val labelToBucket: (String) -> MaskingBucket = { _ ->
+        MaskingBucket.UNKNOWN
+    }
+) {
+    constructor(
+        smoothingTauMs: Long = MaskingDecisionProfiles.V1.smoothingTauMs,
+        consensusRequiredSteps: Int = MaskingDecisionProfiles.V1.consensusRequiredSteps,
+        unknownRecoverySteps: Int = MaskingDecisionProfiles.V1.unknownRecoverySteps,
+        winnerHoldTimeoutMs: Long = MaskingDecisionProfiles.V1.winnerHoldTimeoutMs,
+        attackRatePerMs: Float = MaskingDecisionProfiles.V1.attackRatePerMs,
+        releaseRatePerMs: Float = MaskingDecisionProfiles.V1.releaseRatePerMs,
+        minWinnerScore: Float = MaskingDecisionProfiles.V1.minWinnerScore,
+        minWinnerMargin: Float = MaskingDecisionProfiles.V1.minWinnerMargin,
+        strongWinnerScore: Float = MaskingDecisionProfiles.V1.strongWinnerScore,
+        labelToBucket: (String) -> MaskingBucket = { _ ->
+            MaskingBucket.UNKNOWN
+        }
+    ) : this(
+        policy = MaskingDecisionPolicy(
+            smoothingTauMs = smoothingTauMs,
+            consensusRequiredSteps = consensusRequiredSteps,
+            unknownRecoverySteps = unknownRecoverySteps,
+            attackRatePerMs = attackRatePerMs,
+            releaseRatePerMs = releaseRatePerMs,
+            minWinnerScore = minWinnerScore,
+            minWinnerMargin = minWinnerMargin,
+            strongWinnerScore = strongWinnerScore,
+            winnerHoldTimeoutMs = winnerHoldTimeoutMs
+        ),
+        labelToBucket = labelToBucket
+    )
 
-    fun reset(newBaseline: Float = DEFAULT_MASKING_BASELINE) {
-        baselineVolume = newBaseline.coerceIn(MASKING_MIN_VOLUME, MASKING_MAX_VOLUME)
-        history.clear()
+    private val smoothedBuckets = FloatArray(MaskingBucket.values().size)
+    private var hasSmoothingState = false
+    private var lastSmoothingMs = 0L
+
+    private var pendingWinner: MaskingBucket? = null
+    private var pendingWinnerCount = 0
+    private var confirmedWinner = MaskingBucket.UNKNOWN
+    private var unknownHoldCount = 0
+    private var lastNonUnknownPredictionMs = 0L
+
+    private var lastTarget = policy.baselineVolume
+    private var baselineVolume = policy.baselineVolume
+
+    fun reset(newBaseline: Float = policy.baselineVolume) {
+        baselineVolume = newBaseline.coerceIn(policy.minVolume, policy.maxVolume)
+        hasSmoothingState = false
+        lastSmoothingMs = 0L
+        pendingWinner = null
+        pendingWinnerCount = 0
+        confirmedWinner = MaskingBucket.UNKNOWN
+        unknownHoldCount = 0
+        lastNonUnknownPredictionMs = 0L
         lastTarget = baselineVolume
     }
 
     // Audit notes:
-    // 1) Map top-5 labels into 6 buckets.
-    // 2) Smooth scores with a fixed time window.
-    // 3) Enforce winner/margin and priority rules.
+    // 1) Map top-N labels into masking buckets.
+    // 2) Smooth scores with EMA for lower decision latency.
+    // 3) Enforce winner/margin, configurable consensus, and priority rules.
     // 4) Convert winning bucket into a target volume.
     fun evaluate(
         topPredictions: List<Pair<String, Float>>,
         nowMs: Long,
-        userBaseline: Float = DEFAULT_MASKING_BASELINE
+        userBaseline: Float = policy.baselineVolume
     ): MaskingDecision {
-        val clampedBaseline = userBaseline.coerceIn(MASKING_MIN_VOLUME, MASKING_MAX_VOLUME)
+        val clampedBaseline = userBaseline.coerceIn(policy.minVolume, policy.maxVolume)
         if (clampedBaseline != baselineVolume) {
             baselineVolume = clampedBaseline
             lastTarget = baselineVolume
@@ -85,141 +106,209 @@ class MaskingDecisionEngine {
 
         val smoothed = smoothBuckets(nowMs, raw)
 
-        val ranking = smoothed.indices.sortedByDescending { smoothed[it] }
-        val best = ranking[0]
-        val second = ranking.getOrElse(1) { ranking[0] }
-        val bestScore = smoothed[best]
-        val secondScore = smoothed[second]
-        val bestBucket = MaskingBucket.values()[best]
-        val secondBucket = MaskingBucket.values()[second]
-        val alertScore = smoothed[MaskingBucket.ALERT.ordinal]
+        val mappedRanking = smoothed.indices
+            .filter { it != MaskingBucket.UNKNOWN.ordinal }
+            .sortedByDescending { smoothed[it] }
 
-        val winner: MaskingBucket
-        val shouldAffectPlayback: Boolean
-        val reason: String
-
-        val alertValid = alertScore >= MIN_WINNER_SCORE
-
-        // Rule priority: confidence checks first, then ALERT override.
-        if (alertValid && alertScore >= bestScore - MIN_WINNER_MARGIN) {
-            winner = MaskingBucket.ALERT
-            shouldAffectPlayback = true
-            reason = "Safety sound detected, reducing masking."
-        } else if (bestScore >= MIN_WINNER_SCORE && (bestScore - secondScore) >= MIN_WINNER_MARGIN && bestBucket != MaskingBucket.UNKNOWN) {
-            winner = bestBucket
-            shouldAffectPlayback = true
-            reason = when (winner) {
-                MaskingBucket.ALERT -> "Safety sound detected, reducing masking."
-                MaskingBucket.VOICE -> "Speech detected, increasing masking quickly."
-                MaskingBucket.TRAFFIC -> "Traffic detected, increasing masking."
-                MaskingBucket.HOUSEHOLD -> "Household noise detected, moderate increase."
-                MaskingBucket.NATURE -> "Nature-like sounds detected, keeping baseline."
-                else -> "Holding in place."
-            }
-        } else {
-            winner = MaskingBucket.UNKNOWN
-            shouldAffectPlayback = false
-            reason = "Confidence/margin not sufficient; holding volume."
+        if (mappedRanking.isNotEmpty()) {
+            lastNonUnknownPredictionMs = nowMs
         }
 
-        // Keep all decisions relative to the latest user baseline so volume automation
-        // always stays anchored to the manual slider position.
-        val clampedOffset = bucketTargetOffset[winner] ?: 0f
+        val canKeepWinnerPastTimeout = canKeepWinnerPastTimeout(nowMs)
+
+        val rawWinner: MaskingBucket
+        val winnerReason: String
+        val bestScore: Float
+        val secondScore: Float
+        val secondBucket: MaskingBucket
+
+        if (mappedRanking.isEmpty()) {
+            bestScore = 0f
+            secondScore = 0f
+            secondBucket = MaskingBucket.UNKNOWN
+            rawWinner = MaskingBucket.UNKNOWN
+            winnerReason = when {
+                canKeepWinnerPastTimeout -> "No mapped bucket in this window; holding current bucket."
+                confirmedWinner != MaskingBucket.UNKNOWN -> "No mapped bucket in this window; winner expired."
+                else -> "No mapped bucket in this window; holding current value."
+            }
+        } else {
+            val best = mappedRanking[0]
+            val second = mappedRanking.getOrElse(1) { mappedRanking[0] }
+            val bestBucket = MaskingBucket.values()[best]
+            secondBucket = MaskingBucket.values()[second]
+            bestScore = smoothed[best]
+            secondScore = smoothed[second]
+
+            if (bestScore >= policy.minWinnerScore &&
+                (mappedRanking.size == 1 ||
+                        (bestScore - secondScore) >= policy.minWinnerMargin ||
+                        bestScore >= policy.strongWinnerScore)
+            ) {
+                rawWinner = bestBucket
+                winnerReason = when (rawWinner) {
+                    MaskingBucket.VOICE -> "Speech detected, increasing masking quickly."
+                    MaskingBucket.TRAFFIC -> "Traffic detected (including alert-like sounds), increasing masking."
+                    MaskingBucket.HOUSEHOLD -> "Household noise detected, moderate increase."
+                    MaskingBucket.NATURE -> "Nature-like sounds detected, keeping baseline."
+                    else -> "Holding in place."
+                }
+            } else {
+                rawWinner = MaskingBucket.UNKNOWN
+                winnerReason = if (canKeepWinnerPastTimeout) {
+                    "Confidence/margin not sufficient; holding current bucket."
+                } else {
+                    "Confidence/margin not sufficient; volume hold."
+                }
+            }
+        }
+
+        val consensusWinner = resolveWinnerWithConsensus(rawWinner, nowMs)
+        val shouldAffectPlayback = consensusWinner != MaskingBucket.UNKNOWN && consensusWinner == rawWinner
+
+        val clampedOffset = policy.bucketTargetOffsets[consensusWinner] ?: 0f
         val targetFromBaseline = baselineVolume + clampedOffset
-        val minLimit = (baselineVolume - MAX_AUTOMATIC_DECREASE).coerceAtLeast(MASKING_MIN_VOLUME)
-        val maxLimit = (baselineVolume + MAX_AUTOMATIC_INCREASE).coerceAtMost(MASKING_MAX_VOLUME)
+        val minLimit = (baselineVolume - policy.maxAutomaticDecrease).coerceAtLeast(policy.minVolume)
+        val maxLimit = (baselineVolume + policy.maxAutomaticIncrease).coerceAtMost(policy.maxVolume)
         val computedTarget = targetFromBaseline.coerceIn(minLimit, maxLimit)
+
         val target = if (shouldAffectPlayback) computedTarget else lastTarget
+        val finalReason = when {
+            shouldAffectPlayback -> winnerReason
+            consensusWinner == MaskingBucket.UNKNOWN -> winnerReason
+            else -> "Waiting for consensus: ${pendingWinnerCount.coerceIn(0, policy.consensusRequiredSteps)}/${policy.consensusRequiredSteps}"
+        }
 
         lastTarget = target
 
         return MaskingDecision(
             rawBucketScores = raw,
             smoothedBucketScores = smoothed,
-            winner = winner,
+            winner = consensusWinner,
             winnerScore = bestScore,
             runnerUpScore = secondScore,
             runnerUpBucket = secondBucket,
             shouldAffectPlayback = shouldAffectPlayback,
             targetVolume = target,
-            reason = reason,
-            displayWinner = bucketDisplayNames[winner] ?: winner.name
+            reason = finalReason,
+            displayWinner = maskingBucketDisplayName(consensusWinner)
         )
     }
 
-    private fun smoothBuckets(nowMs: Long, raw: FloatArray): FloatArray {
-        val cutoffMs = nowMs - SMOOTHING_WINDOW_MS
-        history.removeIf { it.first < cutoffMs }
-        history.add(nowMs to raw)
+    private fun canKeepWinnerPastTimeout(nowMs: Long): Boolean {
+        return policy.winnerHoldTimeoutMs > 0L &&
+                confirmedWinner != MaskingBucket.UNKNOWN &&
+                lastNonUnknownPredictionMs > 0L &&
+                (nowMs - lastNonUnknownPredictionMs) < policy.winnerHoldTimeoutMs
+    }
 
-        val averages = FloatArray(MaskingBucket.values().size)
-        if (history.isEmpty()) return averages
-
-        for (frame in history) {
-            for (index in averages.indices) {
-                averages[index] += frame.second[index]
+    private fun resolveWinnerWithConsensus(
+        rawWinner: MaskingBucket,
+        nowMs: Long
+    ): MaskingBucket {
+        if (rawWinner == MaskingBucket.UNKNOWN) {
+            if (confirmedWinner != MaskingBucket.UNKNOWN && canKeepWinnerPastTimeout(nowMs)) {
+                return confirmedWinner
             }
+            pendingWinner = null
+            pendingWinnerCount = 0
+            unknownHoldCount = (unknownHoldCount + 1).coerceAtMost(policy.unknownRecoverySteps.coerceAtLeast(1))
+            if (unknownHoldCount >= policy.unknownRecoverySteps.coerceAtLeast(1)) {
+                confirmedWinner = rawWinner
+                return rawWinner
+            }
+            return confirmedWinner
         }
-        for (index in averages.indices) {
-            averages[index] /= history.size.toFloat()
+
+        if (rawWinner == confirmedWinner) {
+            pendingWinner = null
+            pendingWinnerCount = 0
+            unknownHoldCount = 0
+            return confirmedWinner
         }
-        return averages
+
+        if (pendingWinner != rawWinner) {
+            pendingWinner = rawWinner
+            pendingWinnerCount = 1
+            unknownHoldCount = 0
+        } else {
+            pendingWinnerCount++
+        }
+
+        val requiredSteps = policy.consensusRequiredSteps.coerceAtLeast(1)
+        if (pendingWinnerCount >= requiredSteps) {
+            confirmedWinner = rawWinner
+            pendingWinner = null
+            pendingWinnerCount = 0
+            unknownHoldCount = 0
+        }
+
+        return confirmedWinner
+    }
+
+    private fun smoothBuckets(nowMs: Long, raw: FloatArray): FloatArray {
+        val bucketCount = smoothedBuckets.size
+        val smoothed = FloatArray(bucketCount)
+
+        if (!hasSmoothingState) {
+            raw.copyInto(smoothedBuckets)
+            hasSmoothingState = true
+            lastSmoothingMs = nowMs
+            smoothedBuckets.copyInto(smoothed)
+            return smoothed
+        }
+
+        val elapsedMs = (nowMs - lastSmoothingMs).coerceAtLeast(1L).toFloat()
+        val alpha = if (policy.smoothingTauMs <= 0L) {
+            1f
+        } else {
+            (1f - exp(-elapsedMs / policy.smoothingTauMs.toFloat())).coerceIn(0f, 1f)
+        }
+
+        for (i in 0 until bucketCount) {
+            smoothedBuckets[i] = (1f - alpha) * smoothedBuckets[i] + alpha * raw[i]
+            smoothed[i] = smoothedBuckets[i]
+        }
+        lastSmoothingMs = nowMs
+        return smoothed
     }
 
     private fun mapPredictions(topPredictions: List<Pair<String, Float>>): FloatArray {
         val raw = FloatArray(MaskingBucket.values().size)
         for ((label, score) in topPredictions) {
-            val bucket = mapLabelToBucket(label)
+            val mapped = labelToBucket(label)
+            val bucket = when (mapped) {
+                MaskingBucket.ALERT -> MaskingBucket.TRAFFIC
+                else -> mapped
+            }
             raw[bucket.ordinal] += score
         }
         return raw
     }
-
-    private fun mapLabelToBucket(label: String): MaskingBucket {
-        val normalized = label.lowercase().replace('_', ' ')
-
-        val voiceKeywords = listOf(
-            "speech", "conversation", "narration", "whisper", "child", "laughter", "laugh",
-            "television", "radio", "telecast", "narrative", "talk", "spoken"
-        )
-
-        val householdKeywords = listOf(
-            "vacuum", "blender", "dryer", "dishwasher", "washing machine", "microwave",
-            "air conditioner", "fan", "printer", "kitchen", "refrigerator", "toaster"
-        )
-
-        val trafficKeywords = listOf(
-            "car", "truck", "bus", "motorcycle", "engine", "traffic", "train", "aircraft",
-            "road", "vehicle", "motor"
-        )
-
-        val natureKeywords = listOf(
-            "rain", "wind", "bird", "ocean", "stream", "water", "rustling", "leaf", "waterfall",
-            "waves"
-        )
-
-        val alertKeywords = listOf(
-            "alarm", "siren", "smoke", "beep", "knock", "doorbell", "breaking", "crash"
-        )
-
-        return when {
-            voiceKeywords.any { it in normalized } -> MaskingBucket.VOICE
-            householdKeywords.any { it in normalized } -> MaskingBucket.HOUSEHOLD
-            trafficKeywords.any { it in normalized } -> MaskingBucket.TRAFFIC
-            natureKeywords.any { it in normalized } -> MaskingBucket.NATURE
-            alertKeywords.any { it in normalized } -> MaskingBucket.ALERT
-            else -> MaskingBucket.UNKNOWN
-        }
-    }
 }
 
 fun smoothMaskingVolume(current: Float, target: Float, deltaMs: Long): Float {
+    return smoothMaskingVolume(
+        current,
+        target,
+        deltaMs,
+        MaskingDecisionProfiles.V1.attackRatePerMs,
+        MaskingDecisionProfiles.V1.releaseRatePerMs
+    )
+}
+
+fun smoothMaskingVolume(
+    current: Float,
+    target: Float,
+    deltaMs: Long,
+    attackRatePerMs: Float,
+    releaseRatePerMs: Float
+): Float {
     if (deltaMs <= 0L) return current
 
-    // 3% every 300ms attack, 1% every 300ms release.
-    val attackRatePerMs = 0.0001f
-    val releaseRatePerMs = 0.0000334f
-    val allowedDelta = if (target > current) attackRatePerMs else releaseRatePerMs
+    val clampedAttackRate = attackRatePerMs.coerceAtLeast(0.000001f)
+    val clampedReleaseRate = releaseRatePerMs.coerceAtLeast(0.000001f)
+    val allowedDelta = if (target > current) clampedAttackRate else clampedReleaseRate
     return if (target > current) {
         (current + allowedDelta * deltaMs).coerceAtMost(target)
     } else {
