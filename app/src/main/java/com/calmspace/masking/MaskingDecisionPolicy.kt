@@ -16,10 +16,10 @@ data class MaskingDecisionPolicy(
     val maxAutomaticDecrease: Float = 0.10f,
     val winnerHoldTimeoutMs: Long = 30_000L,
     val bucketTargetOffsets: Map<MaskingBucket, Float> = mapOf(
-        MaskingBucket.VOICE to 0.20f,
+        MaskingBucket.VOICE to 0.25f,
         MaskingBucket.HOUSEHOLD to 0.12f,
-        MaskingBucket.TRAFFIC to 0.15f,
-        MaskingBucket.NATURE to 0.00f,
+        MaskingBucket.TRAFFIC to 0.18f,
+        MaskingBucket.NATURE to 0.08f,
         MaskingBucket.ALERT to 0.15f,
         MaskingBucket.UNKNOWN to 0.00f
     )
@@ -31,11 +31,11 @@ object MaskingDecisionProfiles {
 
 fun maskingBucketDisplayName(bucket: MaskingBucket): String = when (bucket) {
     MaskingBucket.VOICE -> "Speech / Human Activity"
-    MaskingBucket.HOUSEHOLD -> "Household Noise"
+    MaskingBucket.HOUSEHOLD -> "Household / Appliance"
     MaskingBucket.TRAFFIC -> "Outdoor / Traffic"
-    MaskingBucket.NATURE -> "Natural Ambient"
+    MaskingBucket.NATURE -> "Nature / Ambient"
     MaskingBucket.ALERT -> "Outdoor / Traffic"
-    MaskingBucket.UNKNOWN -> "Unknown / Low Confidence"
+    MaskingBucket.UNKNOWN -> "Unclassifiable / Low Confidence"
 }
 
 fun bucketScoresToDisplayList(scores: FloatArray): List<Pair<String, Float>> =

@@ -3,279 +3,279 @@ Speech,VOICE
 "Child speech, kid speaking",VOICE
 Conversation,VOICE
 "Narration, monologue",VOICE
-Babbling,UNKNOWN
+Babbling,VOICE
 Speech synthesizer,VOICE
 Shout,VOICE
 Bellow,TRAFFIC
-Whoop,UNKNOWN
-Yell,UNKNOWN
+Whoop,VOICE
+Yell,VOICE
 Children shouting,VOICE
 Screaming,VOICE
 Whispering,VOICE
 Laughter,VOICE
 Baby laughter,VOICE
-Giggle,UNKNOWN
-Snicker,UNKNOWN
+Giggle,VOICE
+Snicker,VOICE
 Belly laugh,VOICE
 "Chuckle, chortle",VOICE
 "Crying, sobbing",VOICE
 "Baby cry, infant cry",VOICE
-Whimper,UNKNOWN
+Whimper,VOICE
 "Wail, moan",VOICE
 Sigh,VOICE
 Singing,VOICE
-Choir,UNKNOWN
+Choir,VOICE
 Yodeling,VOICE
 Chant,VOICE
-Mantra,UNKNOWN
+Mantra,VOICE
 Child singing,VOICE
 Synthetic singing,VOICE
 Rapping,VOICE
 Humming,VOICE
 Groan,VOICE
-Grunt,UNKNOWN
+Grunt,VOICE
 Whistling,VOICE
-Breathing,UNKNOWN
-Wheeze,UNKNOWN
+Breathing,VOICE
+Wheeze,VOICE
 Snoring,VOICE
 Gasp,VOICE
 Pant,VOICE
 Snort,VOICE
 Cough,VOICE
-Throat clearing,UNKNOWN
+Throat clearing,VOICE
 Sneeze,VOICE
-Sniff,UNKNOWN
-Run,UNKNOWN
-Shuffle,UNKNOWN
-"Walk, footsteps",UNKNOWN
-"Chewing, mastication",NATURE
-Biting,UNKNOWN
-Gargling,UNKNOWN
-Stomach rumble,UNKNOWN
-"Burping, eructation",UNKNOWN
-Hiccup,UNKNOWN
-Fart,UNKNOWN
-Hands,UNKNOWN
-Finger snapping,UNKNOWN
-Clapping,UNKNOWN
+Sniff,VOICE
+Run,TRAFFIC
+Shuffle,TRAFFIC
+"Walk, footsteps",TRAFFIC
+"Chewing, mastication",VOICE
+Biting,NATURE
+Gargling,NATURE
+Stomach rumble,NATURE
+"Burping, eructation",VOICE
+Hiccup,VOICE
+Fart,VOICE
+Hands,VOICE
+Finger snapping,VOICE
+Clapping,VOICE
 "Heart sounds, heartbeat",UNKNOWN
 Heart murmur,UNKNOWN
-Cheering,UNKNOWN
-Applause,UNKNOWN
+Cheering,VOICE
+Applause,VOICE
 Chatter,VOICE
-Crowd,UNKNOWN
+Crowd,VOICE
 "Hubbub, speech noise, speech babble",VOICE
-Children playing,UNKNOWN
-Animal,UNKNOWN
-"Domestic animals, pets",UNKNOWN
+Children playing,VOICE
+Animal,NATURE
+"Domestic animals, pets",NATURE
 Dog,NATURE
-Bark,UNKNOWN
-Yip,UNKNOWN
-Howl,UNKNOWN
-Bow-wow,UNKNOWN
-Growling,UNKNOWN
+Bark,NATURE
+Yip,VOICE
+Howl,NATURE
+Bow-wow,VOICE
+Growling,NATURE
 Whimper (dog),NATURE
 Cat,NATURE
-Purr,UNKNOWN
-Meow,UNKNOWN
-Hiss,UNKNOWN
+Purr,NATURE
+Meow,NATURE
+Hiss,NATURE
 Caterwaul,NATURE
-"Livestock, farm animals, working animals",UNKNOWN
-Horse,UNKNOWN
-Clip-clop,UNKNOWN
-"Neigh, whinny",UNKNOWN
+"Livestock, farm animals, working animals",NATURE
+Horse,NATURE
+Clip-clop,TRAFFIC
+"Neigh, whinny",NATURE
 "Cattle, bovinae",NATURE
-Moo,UNKNOWN
+Moo,NATURE
 Cowbell,TRAFFIC
-Pig,UNKNOWN
-Oink,UNKNOWN
-Goat,UNKNOWN
-Bleat,UNKNOWN
-Sheep,UNKNOWN
-Fowl,UNKNOWN
-"Chicken, rooster",UNKNOWN
-Cluck,UNKNOWN
-"Crowing, cock-a-doodle-doo",UNKNOWN
-Turkey,UNKNOWN
-Gobble,UNKNOWN
-Duck,UNKNOWN
-Quack,UNKNOWN
-Goose,UNKNOWN
-Honk,UNKNOWN
-Wild animals,UNKNOWN
+Pig,NATURE
+Oink,NATURE
+Goat,NATURE
+Bleat,NATURE
+Sheep,NATURE
+Fowl,NATURE
+"Chicken, rooster",NATURE
+Cluck,NATURE
+"Crowing, cock-a-doodle-doo",NATURE
+Turkey,NATURE
+Gobble,NATURE
+Duck,NATURE
+Quack,NATURE
+Goose,NATURE
+Honk,NATURE
+Wild animals,NATURE
 "Roaring cats (lions, tigers)",NATURE
-Roar,UNKNOWN
+Roar,VOICE
 Bird,NATURE
 "Bird vocalization, bird call, bird song",NATURE
 "Chirp, tweet",NATURE
-Squawk,UNKNOWN
-"Pigeon, dove",UNKNOWN
-Coo,UNKNOWN
-Crow,UNKNOWN
-Caw,UNKNOWN
-Owl,UNKNOWN
-Hoot,UNKNOWN
+Squawk,NATURE
+"Pigeon, dove",NATURE
+Coo,NATURE
+Crow,NATURE
+Caw,NATURE
+Owl,NATURE
+Hoot,NATURE
 "Bird flight, flapping wings",NATURE
 "Canidae, dogs, wolves",NATURE
-"Rodents, rats, mice",UNKNOWN
-Mouse,UNKNOWN
-Patter,UNKNOWN
+"Rodents, rats, mice",NATURE
+Mouse,NATURE
+Patter,NATURE
 Insect,NATURE
 Cricket,NATURE
-Mosquito,UNKNOWN
-"Fly, housefly",UNKNOWN
-Buzz,UNKNOWN
-"Bee, wasp, etc.",UNKNOWN
+Mosquito,NATURE
+"Fly, housefly",NATURE
+Buzz,NATURE
+"Bee, wasp, etc.",NATURE
 Frog,NATURE
-Croak,UNKNOWN
-Snake,UNKNOWN
-Rattle,UNKNOWN
-Whale vocalization,UNKNOWN
-Music,UNKNOWN
-Musical instrument,UNKNOWN
-Plucked string instrument,UNKNOWN
-Guitar,UNKNOWN
-Electric guitar,UNKNOWN
-Bass guitar,UNKNOWN
-Acoustic guitar,UNKNOWN
-"Steel guitar, slide guitar",UNKNOWN
-Tapping (guitar technique),UNKNOWN
-Strum,UNKNOWN
-Banjo,UNKNOWN
-Sitar,UNKNOWN
-Mandolin,UNKNOWN
-Zither,UNKNOWN
-Ukulele,UNKNOWN
-Keyboard (musical),UNKNOWN
-Piano,UNKNOWN
-Electric piano,UNKNOWN
-Organ,UNKNOWN
-Electronic organ,UNKNOWN
-Hammond organ,UNKNOWN
-Synthesizer,UNKNOWN
-Sampler,UNKNOWN
-Harpsichord,UNKNOWN
-Percussion,UNKNOWN
-Drum kit,UNKNOWN
-Drum machine,UNKNOWN
-Drum,UNKNOWN
-Snare drum,UNKNOWN
-Rimshot,UNKNOWN
-Drum roll,UNKNOWN
-Bass drum,UNKNOWN
-Timpani,UNKNOWN
-Tabla,UNKNOWN
-Cymbal,UNKNOWN
-Hi-hat,UNKNOWN
-Wood block,UNKNOWN
-Tambourine,UNKNOWN
-Rattle (instrument),UNKNOWN
-Maraca,UNKNOWN
-Gong,UNKNOWN
+Croak,NATURE
+Snake,NATURE
+Rattle,NATURE
+Whale vocalization,NATURE
+Music,VOICE
+Musical instrument,VOICE
+Plucked string instrument,VOICE
+Guitar,VOICE
+Electric guitar,VOICE
+Bass guitar,VOICE
+Acoustic guitar,VOICE
+"Steel guitar, slide guitar",VOICE
+Tapping (guitar technique),VOICE
+Strum,VOICE
+Banjo,VOICE
+Sitar,VOICE
+Mandolin,VOICE
+Zither,VOICE
+Ukulele,VOICE
+Keyboard (musical),VOICE
+Piano,VOICE
+Electric piano,VOICE
+Organ,VOICE
+Electronic organ,VOICE
+Hammond organ,VOICE
+Synthesizer,VOICE
+Sampler,VOICE
+Harpsichord,VOICE
+Percussion,VOICE
+Drum kit,VOICE
+Drum machine,VOICE
+Drum,VOICE
+Snare drum,VOICE
+Rimshot,VOICE
+Drum roll,VOICE
+Bass drum,VOICE
+Timpani,VOICE
+Tabla,VOICE
+Cymbal,VOICE
+Hi-hat,VOICE
+Wood block,VOICE
+Tambourine,VOICE
+Rattle (instrument),VOICE
+Maraca,VOICE
+Gong,VOICE
 Tubular bells,TRAFFIC
-Mallet percussion,UNKNOWN
-"Marimba, xylophone",UNKNOWN
-Glockenspiel,UNKNOWN
+Mallet percussion,TRAFFIC
+"Marimba, xylophone",VOICE
+Glockenspiel,VOICE
 Vibraphone,VOICE
-Steelpan,UNKNOWN
-Orchestra,UNKNOWN
-Brass instrument,UNKNOWN
+Steelpan,VOICE
+Orchestra,TRAFFIC
+Brass instrument,VOICE
 French horn,TRAFFIC
-Trumpet,UNKNOWN
-Trombone,UNKNOWN
-Bowed string instrument,UNKNOWN
-String section,UNKNOWN
-"Violin, fiddle",UNKNOWN
+Trumpet,VOICE
+Trombone,VOICE
+Bowed string instrument,VOICE
+String section,VOICE
+"Violin, fiddle",VOICE
 Pizzicato,NATURE
-Cello,UNKNOWN
-Double bass,UNKNOWN
+Cello,VOICE
+Double bass,VOICE
 "Wind instrument, woodwind instrument",NATURE
-Flute,UNKNOWN
-Saxophone,UNKNOWN
-Clarinet,UNKNOWN
-Harp,UNKNOWN
+Flute,VOICE
+Saxophone,VOICE
+Clarinet,VOICE
+Harp,VOICE
 Bell,TRAFFIC
 Church bell,TRAFFIC
 Jingle bell,TRAFFIC
 Bicycle bell,TRAFFIC
-Tuning fork,UNKNOWN
-Chime,UNKNOWN
+Tuning fork,VOICE
+Chime,VOICE
 Wind chime,NATURE
-Change ringing (campanology),UNKNOWN
-Harmonica,UNKNOWN
-Accordion,UNKNOWN
-Bagpipes,UNKNOWN
-Didgeridoo,UNKNOWN
-Shofar,UNKNOWN
-Theremin,UNKNOWN
+Change ringing (campanology),VOICE
+Harmonica,VOICE
+Accordion,VOICE
+Bagpipes,VOICE
+Didgeridoo,VOICE
+Shofar,VOICE
+Theremin,VOICE
 Singing bowl,VOICE
-Scratching (performance technique),UNKNOWN
-Pop music,UNKNOWN
-Hip hop music,UNKNOWN
-Beatboxing,UNKNOWN
-Rock music,UNKNOWN
-Heavy metal,UNKNOWN
-Punk rock,UNKNOWN
-Grunge,UNKNOWN
-Progressive rock,UNKNOWN
-Rock and roll,UNKNOWN
-Psychedelic rock,UNKNOWN
-Rhythm and blues,UNKNOWN
-Soul music,UNKNOWN
-Reggae,UNKNOWN
-Country,UNKNOWN
-Swing music,UNKNOWN
-Bluegrass,UNKNOWN
-Funk,UNKNOWN
-Folk music,UNKNOWN
-Middle Eastern music,UNKNOWN
-Jazz,UNKNOWN
-Disco,UNKNOWN
-Classical music,UNKNOWN
-Opera,UNKNOWN
-Electronic music,UNKNOWN
-House music,UNKNOWN
-Techno,UNKNOWN
-Dubstep,UNKNOWN
-Drum and bass,UNKNOWN
-Electronica,UNKNOWN
-Electronic dance music,UNKNOWN
-Ambient music,UNKNOWN
-Trance music,UNKNOWN
-Music of Latin America,UNKNOWN
-Salsa music,UNKNOWN
-Flamenco,UNKNOWN
-Blues,UNKNOWN
-Music for children,UNKNOWN
-New-age music,UNKNOWN
-Vocal music,UNKNOWN
-A capella,UNKNOWN
-Music of Africa,UNKNOWN
-Afrobeat,UNKNOWN
-Christian music,UNKNOWN
-Gospel music,UNKNOWN
-Music of Asia,UNKNOWN
+Scratching (performance technique),VOICE
+Pop music,VOICE
+Hip hop music,VOICE
+Beatboxing,VOICE
+Rock music,VOICE
+Heavy metal,VOICE
+Punk rock,VOICE
+Grunge,VOICE
+Progressive rock,VOICE
+Rock and roll,VOICE
+Psychedelic rock,VOICE
+Rhythm and blues,VOICE
+Soul music,VOICE
+Reggae,VOICE
+Country,VOICE
+Swing music,VOICE
+Bluegrass,VOICE
+Funk,VOICE
+Folk music,VOICE
+Middle Eastern music,VOICE
+Jazz,VOICE
+Disco,VOICE
+Classical music,VOICE
+Opera,VOICE
+Electronic music,VOICE
+House music,VOICE
+Techno,VOICE
+Dubstep,VOICE
+Drum and bass,VOICE
+Electronica,VOICE
+Electronic dance music,VOICE
+Ambient music,VOICE
+Trance music,VOICE
+Music of Latin America,VOICE
+Salsa music,VOICE
+Flamenco,VOICE
+Blues,VOICE
+Music for children,VOICE
+New-age music,VOICE
+Vocal music,VOICE
+A capella,VOICE
+Music of Africa,VOICE
+Afrobeat,VOICE
+Christian music,VOICE
+Gospel music,VOICE
+Music of Asia,VOICE
 Carnatic music,TRAFFIC
-Music of Bollywood,UNKNOWN
-Ska,UNKNOWN
-Traditional music,UNKNOWN
-Independent music,UNKNOWN
-Song,UNKNOWN
-Background music,UNKNOWN
-Theme music,UNKNOWN
-Jingle (music),UNKNOWN
-Soundtrack music,UNKNOWN
-Lullaby,UNKNOWN
-Video game music,UNKNOWN
-Christmas music,UNKNOWN
-Dance music,UNKNOWN
-Wedding music,UNKNOWN
-Happy music,UNKNOWN
-Sad music,UNKNOWN
-Tender music,UNKNOWN
-Exciting music,UNKNOWN
-Angry music,UNKNOWN
-Scary music,TRAFFIC
+Music of Bollywood,VOICE
+Ska,VOICE
+Traditional music,VOICE
+Independent music,VOICE
+Song,VOICE
+Background music,VOICE
+Theme music,VOICE
+Jingle (music),VOICE
+Soundtrack music,VOICE
+Lullaby,VOICE
+Video game music,VOICE
+Christmas music,VOICE
+Dance music,VOICE
+Wedding music,VOICE
+Happy music,VOICE
+Sad music,VOICE
+Tender music,VOICE
+Exciting music,VOICE
+Angry music,VOICE
+Scary music,VOICE
 Wind,NATURE
 Rustling leaves,NATURE
 Wind noise (microphone),NATURE
@@ -289,23 +289,23 @@ Stream,NATURE
 Waterfall,NATURE
 Ocean,NATURE
 "Waves, surf",NATURE
-Steam,UNKNOWN
-Gurgling,UNKNOWN
+Steam,TRAFFIC
+Gurgling,VOICE
 Fire,UNKNOWN
-Crackle,UNKNOWN
+Crackle,TRAFFIC
 Vehicle,TRAFFIC
 "Boat, Water vehicle",TRAFFIC
-"Sailboat, sailing ship",UNKNOWN
-"Rowboat, canoe, kayak",UNKNOWN
+"Sailboat, sailing ship",TRAFFIC
+"Rowboat, canoe, kayak",TRAFFIC
 "Motorboat, speedboat",TRAFFIC
-Ship,UNKNOWN
+Ship,TRAFFIC
 Motor vehicle (road),TRAFFIC
 Car,TRAFFIC
 "Vehicle horn, car horn, honking",TRAFFIC
 Toot,TRAFFIC
 Car alarm,TRAFFIC
-"Power windows, electric windows",NATURE
-Skidding,UNKNOWN
+"Power windows, electric windows",TRAFFIC
+Skidding,TRAFFIC
 Tire squeal,TRAFFIC
 Car passing by,TRAFFIC
 "Race car, auto racing",TRAFFIC
@@ -327,196 +327,196 @@ Train whistle,TRAFFIC
 Train horn,TRAFFIC
 "Railroad car, train wagon",TRAFFIC
 Train wheels squealing,TRAFFIC
-"Subway, metro, underground",UNKNOWN
+"Subway, metro, underground",TRAFFIC
 Aircraft,TRAFFIC
 Aircraft engine,TRAFFIC
 Jet engine,TRAFFIC
-"Propeller, airscrew",UNKNOWN
+"Propeller, airscrew",TRAFFIC
 Helicopter,TRAFFIC
 "Fixed-wing aircraft, airplane",TRAFFIC
-Bicycle,UNKNOWN
-Skateboard,UNKNOWN
+Bicycle,TRAFFIC
+Skateboard,TRAFFIC
 Engine,TRAFFIC
 Light engine (high frequency),TRAFFIC
-"Dental drill, dentist's drill",HOUSEHOLD
+"Dental drill, dentist's drill",TRAFFIC
 Lawn mower,HOUSEHOLD
-Chainsaw,UNKNOWN
+Chainsaw,TRAFFIC
 Medium engine (mid frequency),TRAFFIC
 Heavy engine (low frequency),TRAFFIC
 Engine knocking,TRAFFIC
 Engine starting,TRAFFIC
-Idling,UNKNOWN
-"Accelerating, revving, vroom",UNKNOWN
-Door,UNKNOWN
-Doorbell,TRAFFIC
-Ding-dong,UNKNOWN
-Sliding door,UNKNOWN
-Slam,UNKNOWN
-Knock,TRAFFIC
-Tap,UNKNOWN
-Squeak,UNKNOWN
-Cupboard open or close,UNKNOWN
-Drawer open or close,UNKNOWN
-"Dishes, pots, and pans",UNKNOWN
-"Cutlery, silverware",UNKNOWN
-Chopping (food),UNKNOWN
-Frying (food),UNKNOWN
+Idling,TRAFFIC
+"Accelerating, revving, vroom",TRAFFIC
+Door,HOUSEHOLD
+Doorbell,HOUSEHOLD
+Ding-dong,HOUSEHOLD
+Sliding door,HOUSEHOLD
+Slam,TRAFFIC
+Knock,HOUSEHOLD
+Tap,HOUSEHOLD
+Squeak,HOUSEHOLD
+Cupboard open or close,HOUSEHOLD
+Drawer open or close,HOUSEHOLD
+"Dishes, pots, and pans",HOUSEHOLD
+"Cutlery, silverware",HOUSEHOLD
+Chopping (food),HOUSEHOLD
+Frying (food),HOUSEHOLD
 Microwave oven,HOUSEHOLD
 Blender,HOUSEHOLD
-"Water tap, faucet",NATURE
-Sink (filling or washing),UNKNOWN
-Bathtub (filling or washing),UNKNOWN
+"Water tap, faucet",HOUSEHOLD
+Sink (filling or washing),HOUSEHOLD
+Bathtub (filling or washing),HOUSEHOLD
 Hair dryer,HOUSEHOLD
-Toilet flush,UNKNOWN
-Toothbrush,TRAFFIC
-Electric toothbrush,TRAFFIC
+Toilet flush,HOUSEHOLD
+Toothbrush,HOUSEHOLD
+Electric toothbrush,HOUSEHOLD
 Vacuum cleaner,HOUSEHOLD
-Zipper (clothing),UNKNOWN
-Keys jangling,UNKNOWN
-Coin (dropping),UNKNOWN
-Scissors,UNKNOWN
-"Electric shaver, electric razor",UNKNOWN
-Shuffling cards,TRAFFIC
-Typing,UNKNOWN
-Typewriter,UNKNOWN
-Computer keyboard,UNKNOWN
-Writing,UNKNOWN
-Alarm,TRAFFIC
-Telephone,UNKNOWN
-Telephone bell ringing,TRAFFIC
-Ringtone,UNKNOWN
-"Telephone dialing, DTMF",UNKNOWN
-Dial tone,UNKNOWN
-Busy signal,TRAFFIC
-Alarm clock,TRAFFIC
-Siren,TRAFFIC
-Civil defense siren,TRAFFIC
-Buzzer,UNKNOWN
-"Smoke detector, smoke alarm",TRAFFIC
-Fire alarm,TRAFFIC
+Zipper (clothing),HOUSEHOLD
+Keys jangling,HOUSEHOLD
+Coin (dropping),HOUSEHOLD
+Scissors,HOUSEHOLD
+"Electric shaver, electric razor",HOUSEHOLD
+Shuffling cards,HOUSEHOLD
+Typing,HOUSEHOLD
+Typewriter,HOUSEHOLD
+Computer keyboard,HOUSEHOLD
+Writing,HOUSEHOLD
+Alarm,ALERT
+Telephone,ALERT
+Telephone bell ringing,ALERT
+Ringtone,ALERT
+"Telephone dialing, DTMF",ALERT
+Dial tone,ALERT
+Busy signal,ALERT
+Alarm clock,ALERT
+Siren,ALERT
+Civil defense siren,ALERT
+Buzzer,ALERT
+"Smoke detector, smoke alarm",ALERT
+Fire alarm,ALERT
 Foghorn,TRAFFIC
-Whistle,UNKNOWN
-Steam whistle,UNKNOWN
-Mechanisms,UNKNOWN
-"Ratchet, pawl",UNKNOWN
-Clock,UNKNOWN
-Tick,UNKNOWN
-Tick-tock,UNKNOWN
-Gears,UNKNOWN
-Pulleys,UNKNOWN
-Sewing machine,UNKNOWN
+Whistle,TRAFFIC
+Steam whistle,TRAFFIC
+Mechanisms,TRAFFIC
+"Ratchet, pawl",TRAFFIC
+Clock,ALERT
+Tick,ALERT
+Tick-tock,ALERT
+Gears,TRAFFIC
+Pulleys,TRAFFIC
+Sewing machine,HOUSEHOLD
 Mechanical fan,HOUSEHOLD
-Air conditioning,UNKNOWN
-Cash register,UNKNOWN
+Air conditioning,HOUSEHOLD
+Cash register,TRAFFIC
 Printer,HOUSEHOLD
-Camera,UNKNOWN
-Single-lens reflex camera,UNKNOWN
-Tools,UNKNOWN
-Hammer,UNKNOWN
-Jackhammer,UNKNOWN
-Sawing,UNKNOWN
-Filing (rasp),UNKNOWN
-Sanding,UNKNOWN
-Power tool,UNKNOWN
-Drill,HOUSEHOLD
+Camera,HOUSEHOLD
+Single-lens reflex camera,HOUSEHOLD
+Tools,TRAFFIC
+Hammer,TRAFFIC
+Jackhammer,TRAFFIC
+Sawing,TRAFFIC
+Filing (rasp),TRAFFIC
+Sanding,TRAFFIC
+Power tool,TRAFFIC
+Drill,TRAFFIC
 Explosion,TRAFFIC
 "Gunshot, gunfire",TRAFFIC
-Machine gun,UNKNOWN
-Fusillade,UNKNOWN
-Artillery fire,UNKNOWN
-Cap gun,UNKNOWN
-Fireworks,UNKNOWN
-Firecracker,UNKNOWN
-"Burst, pop",UNKNOWN
-Eruption,UNKNOWN
-Boom,UNKNOWN
-Wood,UNKNOWN
-Chop,UNKNOWN
-Splinter,UNKNOWN
-Crack,UNKNOWN
-Glass,UNKNOWN
-"Chink, clink",UNKNOWN
-Shatter,UNKNOWN
-Liquid,UNKNOWN
-"Splash, splatter",UNKNOWN
-Slosh,UNKNOWN
-Squish,UNKNOWN
-Drip,UNKNOWN
-Pour,UNKNOWN
-"Trickle, dribble",UNKNOWN
-Gush,UNKNOWN
-Fill (with liquid),UNKNOWN
-Spray,UNKNOWN
-Pump (liquid),UNKNOWN
-Stir,UNKNOWN
-Boiling,UNKNOWN
-Sonar,UNKNOWN
-Arrow,UNKNOWN
-"Whoosh, swoosh, swish",UNKNOWN
-"Thump, thud",UNKNOWN
-Thunk,UNKNOWN
-Electronic tuner,UNKNOWN
-Effects unit,UNKNOWN
-Chorus effect,UNKNOWN
-Basketball bounce,UNKNOWN
-Bang,UNKNOWN
-"Slap, smack",UNKNOWN
-"Whack, thwack",UNKNOWN
+Machine gun,TRAFFIC
+Fusillade,TRAFFIC
+Artillery fire,TRAFFIC
+Cap gun,TRAFFIC
+Fireworks,TRAFFIC
+Firecracker,TRAFFIC
+"Burst, pop",TRAFFIC
+Eruption,TRAFFIC
+Boom,TRAFFIC
+Wood,TRAFFIC
+Chop,TRAFFIC
+Splinter,TRAFFIC
+Crack,TRAFFIC
+Glass,HOUSEHOLD
+"Chink, clink",HOUSEHOLD
+Shatter,HOUSEHOLD
+Liquid,NATURE
+"Splash, splatter",NATURE
+Slosh,NATURE
+Squish,NATURE
+Drip,NATURE
+Pour,NATURE
+"Trickle, dribble",NATURE
+Gush,NATURE
+Fill (with liquid),NATURE
+Spray,HOUSEHOLD
+Pump (liquid),HOUSEHOLD
+Stir,HOUSEHOLD
+Boiling,HOUSEHOLD
+Sonar,ALERT
+Arrow,TRAFFIC
+"Whoosh, swoosh, swish",TRAFFIC
+"Thump, thud",TRAFFIC
+Thunk,TRAFFIC
+Electronic tuner,TRAFFIC
+Effects unit,TRAFFIC
+Chorus effect,TRAFFIC
+Basketball bounce,TRAFFIC
+Bang,TRAFFIC
+"Slap, smack",TRAFFIC
+"Whack, thwack",TRAFFIC
 "Smash, crash",TRAFFIC
-Breaking,UNKNOWN
-Bouncing,UNKNOWN
-Whip,UNKNOWN
-Flap,UNKNOWN
-Scratch,UNKNOWN
-Scrape,VOICE
-Rub,UNKNOWN
-Roll,UNKNOWN
-Crushing,UNKNOWN
-"Crumpling, crinkling",UNKNOWN
-Tearing,UNKNOWN
-"Beep, bleep",UNKNOWN
-Ping,UNKNOWN
-Ding,UNKNOWN
-Clang,UNKNOWN
-Squeal,UNKNOWN
-Creak,UNKNOWN
-Rustle,UNKNOWN
-Whir,UNKNOWN
-Clatter,UNKNOWN
-Sizzle,UNKNOWN
-Clicking,UNKNOWN
-Clickety-clack,UNKNOWN
-Rumble,UNKNOWN
-Plop,UNKNOWN
-"Jingle, tinkle",UNKNOWN
-Hum,UNKNOWN
-Zing,UNKNOWN
-Boing,UNKNOWN
-Crunch,UNKNOWN
+Breaking,TRAFFIC
+Bouncing,TRAFFIC
+Whip,TRAFFIC
+Flap,TRAFFIC
+Scratch,TRAFFIC
+Scrape,TRAFFIC
+Rub,TRAFFIC
+Roll,TRAFFIC
+Crushing,TRAFFIC
+"Crumpling, crinkling",HOUSEHOLD
+Tearing,TRAFFIC
+"Beep, bleep",ALERT
+Ping,ALERT
+Ding,ALERT
+Clang,ALERT
+Squeal,VOICE
+Creak,HOUSEHOLD
+Rustle,HOUSEHOLD
+Whir,TRAFFIC
+Clatter,HOUSEHOLD
+Sizzle,HOUSEHOLD
+Clicking,HOUSEHOLD
+Clickety-clack,TRAFFIC
+Rumble,TRAFFIC
+Plop,TRAFFIC
+"Jingle, tinkle",HOUSEHOLD
+Hum,HOUSEHOLD
+Zing,TRAFFIC
+Boing,HOUSEHOLD
+Crunch,HOUSEHOLD
 Silence,UNKNOWN
 Sine wave,NATURE
-Harmonic,UNKNOWN
+Harmonic,VOICE
 Chirp tone,NATURE
-Sound effect,UNKNOWN
-Pulse,UNKNOWN
-"Inside, small room",UNKNOWN
-"Inside, large room or hall",UNKNOWN
-"Inside, public space",UNKNOWN
-"Outside, urban or manmade",UNKNOWN
-"Outside, rural or natural",UNKNOWN
-Reverberation,UNKNOWN
-Echo,UNKNOWN
-Noise,UNKNOWN
-Environmental noise,UNKNOWN
-Static,UNKNOWN
-Mains hum,UNKNOWN
-Distortion,UNKNOWN
-Sidetone,UNKNOWN
-Cacophony,UNKNOWN
-White noise,UNKNOWN
-Pink noise,UNKNOWN
-Throbbing,UNKNOWN
-Vibration,UNKNOWN
-Television,UNKNOWN
-Radio,UNKNOWN
-Field recording,UNKNOWN
+Sound effect,VOICE
+Pulse,TRAFFIC
+"Inside, small room",HOUSEHOLD
+"Inside, large room or hall",TRAFFIC
+"Inside, public space",TRAFFIC
+"Outside, urban or manmade",TRAFFIC
+"Outside, rural or natural",TRAFFIC
+Reverberation,TRAFFIC
+Echo,HOUSEHOLD
+Noise,TRAFFIC
+Environmental noise,TRAFFIC
+Static,HOUSEHOLD
+Mains hum,HOUSEHOLD
+Distortion,HOUSEHOLD
+Sidetone,HOUSEHOLD
+Cacophony,HOUSEHOLD
+White noise,HOUSEHOLD
+Pink noise,HOUSEHOLD
+Throbbing,HOUSEHOLD
+Vibration,HOUSEHOLD
+Television,VOICE
+Radio,VOICE
+Field recording,VOICE
