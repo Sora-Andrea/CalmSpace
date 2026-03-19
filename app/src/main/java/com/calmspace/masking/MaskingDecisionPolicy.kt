@@ -16,10 +16,10 @@ data class MaskingDecisionPolicy(
     val maxAutomaticDecrease: Float = 0.10f,
     val winnerHoldTimeoutMs: Long = 30_000L,
     val bucketTargetOffsets: Map<MaskingBucket, Float> = mapOf(
-        MaskingBucket.VOICE to 0.25f,
-        MaskingBucket.HOUSEHOLD to 0.12f,
-        MaskingBucket.TRAFFIC to 0.18f,
-        MaskingBucket.NATURE to 0.08f,
+        MaskingBucket.VOICE to 0.20f,
+        MaskingBucket.HOUSEHOLD to 0.10f,
+        MaskingBucket.TRAFFIC to 0.15f,
+        MaskingBucket.NATURE to 0.10f,
         MaskingBucket.ALERT to 0.15f,
         MaskingBucket.UNKNOWN to 0.00f
     )
@@ -34,7 +34,7 @@ fun maskingBucketDisplayName(bucket: MaskingBucket): String = when (bucket) {
     MaskingBucket.HOUSEHOLD -> "Household / Appliance"
     MaskingBucket.TRAFFIC -> "Outdoor / Traffic"
     MaskingBucket.NATURE -> "Nature / Ambient"
-    MaskingBucket.ALERT -> "Outdoor / Traffic"
+    MaskingBucket.ALERT -> "Alarm / Ringtone"
     MaskingBucket.UNKNOWN -> "Unclassifiable / Low Confidence"
 }
 
