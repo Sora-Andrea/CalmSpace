@@ -8,12 +8,11 @@ private const val YAMNET_CLASS_BUCKET_MAP_ASSET = "yamnet_label_bucket_map.csv"
 private const val YAMNET_CLASS_MAP_HEADER_PREFIX = "index,"
 
 class YamnetLabelBucketResolver private constructor(
-    private val exactLabelMap: Map<String, MaskingBucket>,
-    private val orderedBucketRules: List<Pair<MaskingBucket, List<String>>> = YamnetLabelBucketRules.orderedRulesFromSource()
+    private val exactLabelMap: Map<String, MaskingBucket>
 ) {
     fun resolve(label: String): MaskingBucket {
         val normalized = normalizeLabel(label)
-        return exactLabelMap[normalized] ?: YamnetLabelBucketRules.classify(normalized, orderedBucketRules)
+        return exactLabelMap[normalized] ?: MaskingBucket.UNKNOWN
     }
 
     companion object {
@@ -21,22 +20,15 @@ class YamnetLabelBucketResolver private constructor(
             assetManager: AssetManager,
             classMapAssetFileName: String = YAMNET_CLASS_MAP_ASSET
         ): YamnetLabelBucketResolver {
-            val rules = YamnetLabelBucketRules.orderedRulesFromSource()
             val map = mutableMapOf<String, MaskingBucket>()
 
-            // Prefer explicit, per-label bucket assignments if available.
+            // Explicit per-label assignments from csv.
             map.putAll(loadExactBucketMap(assetManager, YAMNET_CLASS_BUCKET_MAP_ASSET))
-
-            // Always ensure every class-map label has a deterministic bucket entry.
-            // Missing entries are back-filled by the keyword/classic rules.
-            val fallbackMap = loadClassMapBuckets(assetManager, classMapAssetFileName, rules)
-            for ((normalizedLabel, bucket) in fallbackMap) {
-                map.putIfAbsent(normalizedLabel, bucket)
-            }
+            // Ensure full YAMNet class coverage with a safe default.
+            loadClassMapForCompleteness(assetManager, classMapAssetFileName, map)
 
             return YamnetLabelBucketResolver(
-                exactLabelMap = map,
-                orderedBucketRules = rules
+                exactLabelMap = map
             )
         }
     }
@@ -70,29 +62,25 @@ private fun loadExactBucketMap(
     }
 }
 
-private fun loadClassMapBuckets(
+private fun loadClassMapForCompleteness(
     assetManager: AssetManager,
     classMapAssetFileName: String,
-    orderedBucketRules: List<Pair<MaskingBucket, List<String>>>
-): Map<String, MaskingBucket> {
-    return assetManager.open(classMapAssetFileName).bufferedReader().use { reader ->
-        val result = linkedMapOf<String, MaskingBucket>()
-        val lines = reader.readLines()
-        for ((index, line) in lines.withIndex()) {
-            if (index == 0 && line.startsWith(YAMNET_CLASS_MAP_HEADER_PREFIX)) {
-                continue
+    target: MutableMap<String, MaskingBucket>
+) {
+    runCatching {
+        assetManager.open(classMapAssetFileName).bufferedReader().use { reader ->
+            for ((index, line) in reader.readLines().withIndex()) {
+                if (index == 0 && line.startsWith(YAMNET_CLASS_MAP_HEADER_PREFIX)) continue
+
+                val columns = parseCsvLine(line)
+                if (columns.size < 3) continue
+
+                val normalized = normalizeLabel(columns[2].trim())
+                if (normalized.isBlank()) continue
+
+                target.putIfAbsent(normalized, MaskingBucket.UNKNOWN)
             }
-            val columns = parseCsvLine(line)
-            if (columns.size < 3) continue
-
-            val rawLabel = columns[2].trim()
-            if (rawLabel.isBlank()) continue
-
-            val normalized = normalizeLabel(rawLabel)
-            val bucket = YamnetLabelBucketRules.classify(normalized, orderedBucketRules)
-            result[normalized] = consolidateAlertBucket(bucket)
         }
-        result
     }
 }
 
