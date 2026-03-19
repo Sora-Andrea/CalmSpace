@@ -139,6 +139,13 @@ class MainActivity : ComponentActivity() {
         selectedThemeState.value = runCatching {
             AppTheme.valueOf(prefs.getString("app_theme", AppTheme.DEEP_WATER.name) ?: "")
         }.getOrDefault(AppTheme.DEEP_WATER)
+        val startDestination = Routes.MONITOR
+        // Future code for auto logging in users already logged in
+        //val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
+        //    Routes.HOME  // User already logged in, go directly to home
+        //} else {
+        //    Routes.WELCOME
+        //}
         hasMicPermissionState.value = hasRecordAudioPermission()
         refreshPlaybackLevelsFromSelectedTrack(0)
 
@@ -168,7 +175,7 @@ class MainActivity : ComponentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = Routes.WELCOME,
+                        startDestination = startDestination,
                         modifier = Modifier.padding(innerPadding)
                     ) {
 
