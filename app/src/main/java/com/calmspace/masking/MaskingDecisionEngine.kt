@@ -3,8 +3,6 @@ package com.calmspace.masking
 import kotlin.math.exp
 import kotlin.math.max
 
-private val fallbackBucketRules = YamnetLabelBucketRules.orderedRulesFromSource()
-
 enum class MaskingBucket {
     VOICE,
     HOUSEHOLD,
@@ -29,8 +27,8 @@ data class MaskingDecision(
 
 class MaskingDecisionEngine(
     private val policy: MaskingDecisionPolicy = MaskingDecisionProfiles.V1,
-    private val labelToBucket: (String) -> MaskingBucket = { label ->
-        YamnetLabelBucketRules.classify(label, fallbackBucketRules)
+    private val labelToBucket: (String) -> MaskingBucket = { _ ->
+        MaskingBucket.UNKNOWN
     }
 ) {
     constructor(
@@ -43,8 +41,8 @@ class MaskingDecisionEngine(
         minWinnerScore: Float = MaskingDecisionProfiles.V1.minWinnerScore,
         minWinnerMargin: Float = MaskingDecisionProfiles.V1.minWinnerMargin,
         strongWinnerScore: Float = MaskingDecisionProfiles.V1.strongWinnerScore,
-        labelToBucket: (String) -> MaskingBucket = { label ->
-            YamnetLabelBucketRules.classify(label, fallbackBucketRules)
+        labelToBucket: (String) -> MaskingBucket = { _ ->
+            MaskingBucket.UNKNOWN
         }
     ) : this(
         policy = MaskingDecisionPolicy(
