@@ -35,12 +35,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.tensorflow.lite.support.audio.TensorAudio
 import org.tensorflow.lite.task.audio.classifier.AudioClassifier
+import org.tensorflow.lite.task.audio.classifier.Classifications
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.log10
 import kotlin.math.sqrt
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import androidx.core.app.ActivityCompat
+import java.util.concurrent.ArrayBlockingQueue
 import kotlin.random.Random
 
 // ─────────────────────────────────────────────────────────────────────
@@ -175,6 +177,10 @@ class NoiseMonitorService : Service() {
     @Volatile private var isGeneratedNoisePlaybackEnabled = false
     @Volatile private var isHeadphoneFadeInActive = false
 
+    private val maskingInferenceQueue = ArrayBlockingQueue<MaskingInferenceRequest>(4)
+    private var maskingInferenceThread: Thread? = null
+    private val isMaskingInferenceRunning = AtomicBoolean(false)
+
     // Pink noise generator state (Paul Kellett's refined method)
     private var b0 = 0.0; private var b1 = 0.0; private var b2 = 0.0
     private var b3 = 0.0; private var b4 = 0.0; private var b5 = 0.0; private var b6 = 0.0
@@ -230,6 +236,7 @@ class NoiseMonitorService : Service() {
     override fun onDestroy() {
         stopRecording()
         releaseAudioTrack()
+        stopMaskingInferenceWorker()
         stopMaskingClassifier()
 
         // TODO: Unregister headphone callback
@@ -345,6 +352,7 @@ class NoiseMonitorService : Service() {
 
         if (isMaskingAutomationEnabled) {
             maskingDecisionEngine.reset(clampedVolume)
+            maskingInferenceQueue.clear()
             _automatedTargetVolume.value = clampedVolume
             // For automation mode, treat slider as baseline and let the engine re-target from there.
             if (!isNoiseThreadRunning.get()) {
@@ -374,12 +382,14 @@ class NoiseMonitorService : Service() {
         isMaskingAutomationEnabled = enabled
         if (enabled) {
             initMaskingClassifier()
+            startMaskingInferenceWorker()
             maskingDecisionEngine.reset(_startingVolume.value)
             _currentMaskingBucket.value = "Listening..."
             _currentTopPrediction.value = ""
             _automatedTargetVolume.value = _startingVolume.value
             _automatedDecisionReason.value = "YAMNet automation ready"
         } else {
+            stopMaskingInferenceWorker()
             _currentMaskingBucket.value = ""
             _currentTopPrediction.value = ""
             _automatedDecisionReason.value = "YAMNet automation disabled"
@@ -447,6 +457,7 @@ class NoiseMonitorService : Service() {
 
                 if (isMaskingAutomationEnabled) {
                     initMaskingClassifier()
+                    startMaskingInferenceWorker()
                 }
 
                 recorder?.startRecording()
@@ -546,7 +557,7 @@ class NoiseMonitorService : Service() {
                             if (shouldRunMaskingInference) {
                                 if (latestDb > eventThreshold && read > 0) {
                                     lastLoudWindowMs = nowMs
-                                    updateMaskingDecisionFromAudioWindow(buf, read, floor, nowMs)
+                                    enqueueMaskingInference(buf, read, floor, nowMs)
                                 } else {
                                     applyMaskingDecisionFromPredictions(
                                         maskingDecisionEngine.evaluate(emptyList(), nowMs, floor),
@@ -627,6 +638,9 @@ class NoiseMonitorService : Service() {
                                 "ambient: ${latestDb.toInt()} dB | mask: ${(currentMaskingVolume * 100).toInt()}%"
                             lastStatusUpdate = now
                         }
+                    } else {
+                        // Avoid a hot spin if AudioRecord returns non-positive values.
+                        Thread.sleep(2)
                     }
                 }
 
@@ -664,6 +678,7 @@ class NoiseMonitorService : Service() {
         stopWhiteNoise()
         _automatedDecisionReason.value = "Session ended"
         _automatedTargetVolume.value = _startingVolume.value
+        stopMaskingInferenceWorker()
         stopMaskingClassifier()
         // Do not call recorder?.stop() here — the recording thread's finally block
         // handles its own cleanup. Calling stop() from two threads races and throws
@@ -729,6 +744,68 @@ class NoiseMonitorService : Service() {
         maskingTensorAudio = null
     }
 
+    private fun startMaskingInferenceWorker() {
+        if (!isMaskingAutomationEnabled || isMaskingInferenceRunning.get()) return
+        maskingInferenceQueue.clear()
+        isMaskingInferenceRunning.set(true)
+        maskingInferenceThread = Thread {
+            while (isMaskingInferenceRunning.get()) {
+                try {
+                    val request = maskingInferenceQueue.take()
+                    if (!isMaskingInferenceRunning.get()) {
+                        break
+                    }
+                    updateMaskingDecisionFromAudioWindow(
+                        buffer = request.buffer,
+                        read = request.read,
+                        baseline = request.baseline,
+                        decisionTimeMs = request.decisionTimeMs
+                    )
+                } catch (_: InterruptedException) {
+                    // Stop path interrupts the worker thread.
+                }
+            }
+        }.apply {
+            start()
+        }
+    }
+
+    private fun stopMaskingInferenceWorker() {
+        if (!isMaskingInferenceRunning.getAndSet(false)) return
+        maskingInferenceThread?.interrupt()
+        maskingInferenceThread = null
+        maskingInferenceQueue.clear()
+    }
+
+    private fun enqueueMaskingInference(
+        buffer: ShortArray,
+        read: Int,
+        baseline: Float,
+        decisionTimeMs: Long
+    ) {
+        if (!isMaskingAutomationEnabled || !isMaskingInferenceRunning.get()) return
+        val copied = buffer.copyOfRange(0, read)
+        val request = MaskingInferenceRequest(
+            buffer = copied,
+            read = copied.size,
+            baseline = baseline,
+            decisionTimeMs = decisionTimeMs
+        )
+
+        if (!maskingInferenceQueue.offer(request)) {
+            // Drop the oldest pending window to keep latency bounded.
+            maskingInferenceQueue.poll()
+            maskingInferenceQueue.offer(request)
+        }
+    }
+
+    private data class MaskingInferenceRequest(
+        val buffer: ShortArray,
+        val read: Int,
+        val baseline: Float,
+        val decisionTimeMs: Long
+    )
+
     private fun updateMaskingDecisionFromAudioWindow(
         buffer: ShortArray,
         read: Int,
@@ -741,11 +818,7 @@ class NoiseMonitorService : Service() {
         runCatching {
             tensorAudio.load(buffer, 0, read)
             val results = classifier.classify(tensorAudio)
-            val topPredictions = results
-                .flatMap { result -> result.categories }
-                .sortedByDescending { it.score }
-                .take(MASKING_TOP_PREDICTIONS)
-                .map { category -> category.label to category.score.toFloat() }
+            val topPredictions = buildTopPredictions(results)
 
             val decision = maskingDecisionEngine.evaluate(topPredictions, decisionTimeMs, baseline)
             applyMaskingDecisionFromPredictions(
@@ -755,6 +828,37 @@ class NoiseMonitorService : Service() {
         }.onFailure {
             _automatedDecisionReason.value = "YAMNet classification failed"
         }
+    }
+
+    private fun buildTopPredictions(results: List<Classifications>): MutableList<Pair<String, Float>> {
+        val topPredictions = ArrayList<Pair<String, Float>>(MASKING_TOP_PREDICTIONS)
+
+        for (result in results) {
+            for (category in result.categories) {
+                val score = category.score.toFloat()
+                val label = category.label
+
+                var inserted = false
+                for (index in topPredictions.indices) {
+                    if (score > topPredictions[index].second) {
+                        topPredictions.add(index, label to score)
+                        inserted = true
+                        break
+                    }
+                }
+
+                if (!inserted && topPredictions.size < MASKING_TOP_PREDICTIONS) {
+                    topPredictions.add(label to score)
+                    inserted = true
+                }
+
+                if (topPredictions.size > MASKING_TOP_PREDICTIONS) {
+                    topPredictions.removeAt(topPredictions.size - 1)
+                }
+            }
+        }
+
+        return topPredictions
     }
 
     private fun applyMaskingDecisionFromPredictions(

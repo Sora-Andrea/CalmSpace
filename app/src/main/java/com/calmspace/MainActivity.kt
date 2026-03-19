@@ -17,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -99,9 +100,13 @@ class MainActivity : ComponentActivity() {
     private val availablePlaybackTracks = PrecomputedPlaybackTracks.tracks
     private val playbackTrackOptions = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
     private val selectedTrackIdState = mutableStateOf(availablePlaybackTracks.firstOrNull()?.id.orEmpty())
-    private val playbackLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val playbackLevelsState = mutableStateListOf<Float>().apply {
+        repeat(VISUALIZER_BAR_COUNT) { add(0f) }
+    }
     private val playbackDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
-    private val micLevelsState = mutableStateOf(List(VISUALIZER_BAR_COUNT) { 0f })
+    private val micLevelsState = mutableStateListOf<Float>().apply {
+        repeat(VISUALIZER_BAR_COUNT) { add(0f) }
+    }
     private val micDbfsState = mutableStateOf(VISUALIZER_DB_FLOOR)
     private val isMicRunningState = mutableStateOf(false)
     private val hasMicPermissionState = mutableStateOf(false)
@@ -287,7 +292,7 @@ class MainActivity : ComponentActivity() {
                             }
 
                             MonitorScreen(
-                                micLevels = micLevelsState.value,
+                                micLevels = micLevelsState,
                                 trackOptions = monitorTrackOptions,
                                 selectedTrackId = selectedMonitorTrackIdState.value,
                                 isServiceTrack = isServiceTrack,
@@ -343,7 +348,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onStopRecording = {
                                     stopLoopPlayback()
-                                    micLevelsState.value = emptyLevels()
+                                    resetLevelHistory(micLevelsState)
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
                                     navController.navigate(Routes.HOME) {
                                         popUpTo(Routes.MONITOR) { inclusive = true }
@@ -384,10 +389,10 @@ class MainActivity : ComponentActivity() {
                                 isPlaying = isLoopPlayingState.value,
                                 trackOptions = playbackTrackOptions,
                                 selectedTrackId = selectedTrackIdState.value,
-                                playerLevels = playbackLevelsState.value,
+                                playerLevels = playbackLevelsState,
                                 playbackDbfs = playbackDbfsState.value,
                                 isMicRunning = isMicRunningState.value,
-                                micLevels = micLevelsState.value,
+                                micLevels = micLevelsState,
                                 micDbfs = micDbfsState.value,
                                 hasMicPermission = hasMicPermissionState.value,
                                 onTrackSelected = { trackId -> selectPlaybackTrack(trackId) },
@@ -476,7 +481,7 @@ class MainActivity : ComponentActivity() {
         exoPlayer?.seekToDefaultPosition()
         isLoopPlayingState.value = false
         stopPlaybackVisualizerSync()
-        playbackLevelsState.value = emptyLevels()
+        resetLevelHistory(playbackLevelsState)
         playbackDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
@@ -534,10 +539,7 @@ class MainActivity : ComponentActivity() {
                         durationMs = player.duration
                     )
                     playbackDbfsState.value = dbfs
-                    playbackLevelsState.value = pushLevel(
-                        playbackLevelsState.value,
-                        dbfsToVisualizerLevel(dbfs)
-                    )
+                    pushLevel(playbackLevelsState, dbfsToVisualizerLevel(dbfs))
                     lastSyncMs = nowMs
                 }
                 awaitFrame()
@@ -551,7 +553,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshPlaybackLevelsFromSelectedTrack(startIndex: Int) {
-        playbackLevelsState.value = emptyLevels()
+        resetLevelHistory(playbackLevelsState)
         playbackDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
@@ -629,10 +631,7 @@ class MainActivity : ComponentActivity() {
                     val micDbfs = linearToDbfs(linearLevel)
                     runOnUiThread {
                         micDbfsState.value = micDbfs
-                        micLevelsState.value = pushLevel(
-                            micLevelsState.value,
-                            dbfsToVisualizerLevel(micDbfs)
-                        )
+                        pushLevel(micLevelsState, dbfsToVisualizerLevel(micDbfs))
                     }
                 }
             }
@@ -652,7 +651,7 @@ class MainActivity : ComponentActivity() {
         }
         micAudioRecord = null
         isMicRunningState.value = false
-        micLevelsState.value = emptyLevels()
+        resetLevelHistory(micLevelsState)
         micDbfsState.value = VISUALIZER_DB_FLOOR
     }
 
@@ -690,9 +689,17 @@ class MainActivity : ComponentActivity() {
         return (rms / 32767.0).toFloat().coerceIn(0f, 1f)
     }
 
-    private fun pushLevel(history: List<Float>, level: Float): List<Float> {
-        val trimmed = if (history.size >= VISUALIZER_BAR_COUNT) history.drop(1) else history
-        return trimmed + level
+    private fun pushLevel(history: MutableList<Float>, level: Float) {
+        if (history.isNotEmpty()) {
+            history.removeAt(0)
+        }
+        history.add(level)
+    }
+
+    private fun resetLevelHistory(history: MutableList<Float>) {
+        for (i in history.indices) {
+            history[i] = 0f
+        }
     }
 
     private fun linearToDbfs(linear: Float): Float {
@@ -711,7 +718,6 @@ class MainActivity : ComponentActivity() {
         return start + (end - start) * fraction
     }
 
-    private fun emptyLevels(): List<Float> = List(VISUALIZER_BAR_COUNT) { 0f }
 
     override fun onDestroy() {
         stopMicrophoneVisualizer()
