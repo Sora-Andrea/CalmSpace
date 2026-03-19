@@ -54,7 +54,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import com.calmspace.service.AudioTimingConfig.EXO_PLAYBACK_FADE_IN_DURATION_MS
 import com.calmspace.service.AudioTimingConfig.EXO_PLAYBACK_FADE_IN_STEP_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_DUCKING_FACTOR
+import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MAX
+import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MIN
 import kotlin.math.log10
+import kotlin.math.max
 import kotlin.math.sqrt
 
 // ─────────────────────────────────────────────
@@ -115,6 +119,7 @@ class MainActivity : ComponentActivity() {
     private var playbackFadeInJob: Job? = null
     private var isExoFadeInInProgress = false
     private var pendingExoPlayerVolume = 1f
+    private var exoPlaybackBaselineVolume = 1f
     private var loadedTrackId: String? = null
     private var micAudioRecord: AudioRecord? = null
     private var micCaptureJob: Job? = null
@@ -327,6 +332,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onTrackVolumeChange = { volume ->
                                     if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
+                                        exoPlaybackBaselineVolume = volume.coerceIn(0f, 1f)
                                         if (!isExoFadeInInProgress) {
                                             exoPlayer?.volume = volume
                                         } else {
@@ -339,10 +345,11 @@ class MainActivity : ComponentActivity() {
                                     // only drives ExoPlayer when the selected ambient
                                     // source is microphone/asset playback.
                                     if (!isServiceTrack(selectedMonitorTrackIdState.value)) {
+                                        val dampened = dampenExoTargetWithPlaybackLoudness(volume)
                                         if (isExoFadeInInProgress) {
-                                            pendingExoPlayerVolume = volume
+                                            pendingExoPlayerVolume = dampened
                                         } else {
-                                            exoPlayer?.volume = volume
+                                            exoPlayer?.volume = dampened
                                         }
                                     }
                                 },
@@ -496,6 +503,7 @@ class MainActivity : ComponentActivity() {
     private fun startLoopPlaybackWithFadeIn(targetVolume: Float) {
         val player = exoPlayer ?: return
         val clampedTarget = targetVolume.coerceIn(0f, 1f)
+        exoPlaybackBaselineVolume = clampedTarget
         playbackFadeInJob?.cancel()
         pendingExoPlayerVolume = clampedTarget
 
@@ -712,6 +720,21 @@ class MainActivity : ComponentActivity() {
         val clamped = dbfs.coerceIn(VISUALIZER_DB_FLOOR, VISUALIZER_DB_CEILING)
         return ((clamped - VISUALIZER_DB_FLOOR) /
             (VISUALIZER_DB_CEILING - VISUALIZER_DB_FLOOR)).coerceIn(0f, 1f)
+    }
+
+    private fun dampenExoTargetWithPlaybackLoudness(target: Float): Float {
+        val clampedBaseline = exoPlaybackBaselineVolume.coerceIn(0f, 1f)
+        val clampedTarget = target.coerceIn(0f, 1f)
+        val loudnessRange = MASKING_AUTOMATION_REFERENCE_DB_MAX - MASKING_AUTOMATION_REFERENCE_DB_MIN
+
+        if (loudnessRange <= 0f) {
+            return clampedTarget
+        }
+
+        val normalizedLoudness = ((playbackDbfsState.value - MASKING_AUTOMATION_REFERENCE_DB_MIN) / loudnessRange).coerceIn(0f, 1f)
+        val duckAmount = normalizedLoudness * MASKING_AUTOMATION_DUCKING_FACTOR
+        val targetIncrease = max(0f, clampedTarget - clampedBaseline)
+        return (clampedBaseline + targetIncrease * (1f - duckAmount)).coerceIn(clampedBaseline, 1f)
     }
 
     private fun lerp(start: Float, end: Float, fraction: Float): Float {
