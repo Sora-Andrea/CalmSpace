@@ -119,9 +119,13 @@ fun MonitorScreen(
     var selectedSound  by remember { mutableStateOf(SoundType.WHITE_NOISE) }
     var isHeadphonesConnected by remember { mutableStateOf(false) }
     var isVisualizerActive by remember { mutableStateOf(false) }
-    var monitorLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
+    val monitorLevels = remember(micLevels.size.coerceAtLeast(1)) {
+        mutableStateListOf<Float>().apply { repeat(micLevels.size.coerceAtLeast(1)) { add(0f) } }
+    }
     var maskingVolume by remember { mutableStateOf(0f) }
-    var maskingLevels by remember { mutableStateOf(List(micLevels.size.coerceAtLeast(1)) { 0f }) }
+    val maskingLevels = remember(micLevels.size.coerceAtLeast(1)) {
+        mutableStateListOf<Float>().apply { repeat(micLevels.size.coerceAtLeast(1)) { add(0f) } }
+    }
     var showHeadphoneDisconnectDialog by remember { mutableStateOf(false) }
     val selectedTrackIdState by rememberUpdatedState(selectedTrackId)
 
@@ -137,8 +141,8 @@ fun MonitorScreen(
                 if (nowMs - lastVizUpdateMs < 33L) return@collect
 
                 lastVizUpdateMs = nowMs
-                monitorLevels = pushLevel(monitorLevels, dbToVisualizerLevel(db))
-                maskingLevels = pushLevel(maskingLevels, maskingVolume)
+                pushLevel(monitorLevels, dbToVisualizerLevel(db))
+                pushLevel(maskingLevels, maskingVolume)
             }
         }
         launch { svc.soundEvents.collect    { soundEvents    = it } }
@@ -184,8 +188,8 @@ fun MonitorScreen(
         onMonitoringSessionStateChanged(isRecording)
         isVisualizerActive = isRecording
         if (!isRecording) {
-            monitorLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
-            maskingLevels = List(micLevels.size.coerceAtLeast(1)) { 0f }
+            resetLevels(monitorLevels)
+            resetLevels(maskingLevels)
         }
     }
 
@@ -290,7 +294,11 @@ fun MonitorScreen(
     // Derived UI state
     // ─────────────────────────────────────────────────────────────────
 
-    val bucketLabel = if (isRecording) currentBucket.ifBlank { "Initializing..." } else "No session active"
+    val bucketLabel = if (isRecording) {
+        currentBucket.ifBlank { "Listening..." }
+    } else {
+        "No session active"
+    }
     val topPredictionText = if (isRecording) topPrediction else ""
     val displayLine = if (topPredictionText.isBlank()) {
         bucketLabel
@@ -437,7 +445,8 @@ fun MonitorScreen(
                 // session start/stop should only gate service recording + playback here.
                 if (isRecording) {
                     isVisualizerActive = false
-                    monitorLevels = inactiveVisualizerLevels
+                    resetLevels(monitorLevels)
+                    resetLevels(maskingLevels)
                     if (isServiceTrack(selectedTrackId)) {
                         service?.stopWhiteNoise()
                         service?.setGeneratedNoisePlaybackEnabled(false)
@@ -498,7 +507,15 @@ private fun dbToVisualizerLevel(dbfs: Float): Float {
     return ((clampedDb - VISUALIZER_DB_FLOOR) / (VISUALIZER_DB_CEILING - VISUALIZER_DB_FLOOR)).coerceIn(0f, 1f)
 }
 
-private fun pushLevel(levels: List<Float>, level: Float): List<Float> {
-    val trimmed = if (levels.isNotEmpty()) levels.drop(1) else levels
-    return trimmed + level
+private fun pushLevel(levels: MutableList<Float>, level: Float) {
+    if (levels.isNotEmpty()) {
+        levels.removeAt(0)
+    }
+    levels.add(level.coerceIn(0f, 1f))
+}
+
+private fun resetLevels(levels: MutableList<Float>) {
+    for (index in levels.indices) {
+        levels[index] = 0f
+    }
 }

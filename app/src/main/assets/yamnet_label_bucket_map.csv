@@ -1,0 +1,522 @@
+label,bucket
+Speech,VOICE
+"Child speech, kid speaking",VOICE
+Conversation,VOICE
+"Narration, monologue",VOICE
+Babbling,VOICE
+Speech synthesizer,VOICE
+Shout,VOICE
+Bellow,TRAFFIC
+Whoop,VOICE
+Yell,VOICE
+Children shouting,VOICE
+Screaming,VOICE
+Whispering,VOICE
+Laughter,VOICE
+Baby laughter,VOICE
+Giggle,VOICE
+Snicker,VOICE
+Belly laugh,VOICE
+"Chuckle, chortle",VOICE
+"Crying, sobbing",VOICE
+"Baby cry, infant cry",VOICE
+Whimper,VOICE
+"Wail, moan",VOICE
+Sigh,VOICE
+Singing,VOICE
+Choir,VOICE
+Yodeling,VOICE
+Chant,VOICE
+Mantra,VOICE
+Child singing,VOICE
+Synthetic singing,VOICE
+Rapping,VOICE
+Humming,VOICE
+Groan,VOICE
+Grunt,VOICE
+Whistling,VOICE
+Breathing,VOICE
+Wheeze,VOICE
+Snoring,VOICE
+Gasp,VOICE
+Pant,VOICE
+Snort,VOICE
+Cough,VOICE
+Throat clearing,VOICE
+Sneeze,VOICE
+Sniff,VOICE
+Run,TRAFFIC
+Shuffle,TRAFFIC
+"Walk, footsteps",TRAFFIC
+"Chewing, mastication",VOICE
+Biting,NATURE
+Gargling,NATURE
+Stomach rumble,NATURE
+"Burping, eructation",VOICE
+Hiccup,VOICE
+Fart,VOICE
+Hands,VOICE
+Finger snapping,VOICE
+Clapping,VOICE
+"Heart sounds, heartbeat",UNKNOWN
+Heart murmur,UNKNOWN
+Cheering,VOICE
+Applause,VOICE
+Chatter,VOICE
+Crowd,VOICE
+"Hubbub, speech noise, speech babble",VOICE
+Children playing,VOICE
+Animal,NATURE
+"Domestic animals, pets",NATURE
+Dog,NATURE
+Bark,NATURE
+Yip,VOICE
+Howl,NATURE
+Bow-wow,VOICE
+Growling,NATURE
+Whimper (dog),NATURE
+Cat,NATURE
+Purr,NATURE
+Meow,NATURE
+Hiss,NATURE
+Caterwaul,NATURE
+"Livestock, farm animals, working animals",NATURE
+Horse,NATURE
+Clip-clop,TRAFFIC
+"Neigh, whinny",NATURE
+"Cattle, bovinae",NATURE
+Moo,NATURE
+Cowbell,TRAFFIC
+Pig,NATURE
+Oink,NATURE
+Goat,NATURE
+Bleat,NATURE
+Sheep,NATURE
+Fowl,NATURE
+"Chicken, rooster",NATURE
+Cluck,NATURE
+"Crowing, cock-a-doodle-doo",NATURE
+Turkey,NATURE
+Gobble,NATURE
+Duck,NATURE
+Quack,NATURE
+Goose,NATURE
+Honk,NATURE
+Wild animals,NATURE
+"Roaring cats (lions, tigers)",NATURE
+Roar,VOICE
+Bird,NATURE
+"Bird vocalization, bird call, bird song",NATURE
+"Chirp, tweet",NATURE
+Squawk,NATURE
+"Pigeon, dove",NATURE
+Coo,NATURE
+Crow,NATURE
+Caw,NATURE
+Owl,NATURE
+Hoot,NATURE
+"Bird flight, flapping wings",NATURE
+"Canidae, dogs, wolves",NATURE
+"Rodents, rats, mice",NATURE
+Mouse,NATURE
+Patter,NATURE
+Insect,NATURE
+Cricket,NATURE
+Mosquito,NATURE
+"Fly, housefly",NATURE
+Buzz,NATURE
+"Bee, wasp, etc.",NATURE
+Frog,NATURE
+Croak,NATURE
+Snake,NATURE
+Rattle,NATURE
+Whale vocalization,NATURE
+Music,VOICE
+Musical instrument,VOICE
+Plucked string instrument,VOICE
+Guitar,VOICE
+Electric guitar,VOICE
+Bass guitar,VOICE
+Acoustic guitar,VOICE
+"Steel guitar, slide guitar",VOICE
+Tapping (guitar technique),VOICE
+Strum,VOICE
+Banjo,VOICE
+Sitar,VOICE
+Mandolin,VOICE
+Zither,VOICE
+Ukulele,VOICE
+Keyboard (musical),VOICE
+Piano,VOICE
+Electric piano,VOICE
+Organ,VOICE
+Electronic organ,VOICE
+Hammond organ,VOICE
+Synthesizer,VOICE
+Sampler,VOICE
+Harpsichord,VOICE
+Percussion,VOICE
+Drum kit,VOICE
+Drum machine,VOICE
+Drum,VOICE
+Snare drum,VOICE
+Rimshot,VOICE
+Drum roll,VOICE
+Bass drum,VOICE
+Timpani,VOICE
+Tabla,VOICE
+Cymbal,VOICE
+Hi-hat,VOICE
+Wood block,VOICE
+Tambourine,VOICE
+Rattle (instrument),VOICE
+Maraca,VOICE
+Gong,VOICE
+Tubular bells,TRAFFIC
+Mallet percussion,TRAFFIC
+"Marimba, xylophone",VOICE
+Glockenspiel,VOICE
+Vibraphone,VOICE
+Steelpan,VOICE
+Orchestra,TRAFFIC
+Brass instrument,VOICE
+French horn,TRAFFIC
+Trumpet,VOICE
+Trombone,VOICE
+Bowed string instrument,VOICE
+String section,VOICE
+"Violin, fiddle",VOICE
+Pizzicato,NATURE
+Cello,VOICE
+Double bass,VOICE
+"Wind instrument, woodwind instrument",NATURE
+Flute,VOICE
+Saxophone,VOICE
+Clarinet,VOICE
+Harp,VOICE
+Bell,TRAFFIC
+Church bell,TRAFFIC
+Jingle bell,TRAFFIC
+Bicycle bell,TRAFFIC
+Tuning fork,VOICE
+Chime,VOICE
+Wind chime,NATURE
+Change ringing (campanology),VOICE
+Harmonica,VOICE
+Accordion,VOICE
+Bagpipes,VOICE
+Didgeridoo,VOICE
+Shofar,VOICE
+Theremin,VOICE
+Singing bowl,VOICE
+Scratching (performance technique),VOICE
+Pop music,VOICE
+Hip hop music,VOICE
+Beatboxing,VOICE
+Rock music,VOICE
+Heavy metal,VOICE
+Punk rock,VOICE
+Grunge,VOICE
+Progressive rock,VOICE
+Rock and roll,VOICE
+Psychedelic rock,VOICE
+Rhythm and blues,VOICE
+Soul music,VOICE
+Reggae,VOICE
+Country,VOICE
+Swing music,VOICE
+Bluegrass,VOICE
+Funk,VOICE
+Folk music,VOICE
+Middle Eastern music,VOICE
+Jazz,VOICE
+Disco,VOICE
+Classical music,VOICE
+Opera,VOICE
+Electronic music,VOICE
+House music,VOICE
+Techno,VOICE
+Dubstep,VOICE
+Drum and bass,VOICE
+Electronica,VOICE
+Electronic dance music,VOICE
+Ambient music,VOICE
+Trance music,VOICE
+Music of Latin America,VOICE
+Salsa music,VOICE
+Flamenco,VOICE
+Blues,VOICE
+Music for children,VOICE
+New-age music,VOICE
+Vocal music,VOICE
+A capella,VOICE
+Music of Africa,VOICE
+Afrobeat,VOICE
+Christian music,VOICE
+Gospel music,VOICE
+Music of Asia,VOICE
+Carnatic music,TRAFFIC
+Music of Bollywood,VOICE
+Ska,VOICE
+Traditional music,VOICE
+Independent music,VOICE
+Song,VOICE
+Background music,VOICE
+Theme music,VOICE
+Jingle (music),VOICE
+Soundtrack music,VOICE
+Lullaby,VOICE
+Video game music,VOICE
+Christmas music,VOICE
+Dance music,VOICE
+Wedding music,VOICE
+Happy music,VOICE
+Sad music,VOICE
+Tender music,VOICE
+Exciting music,VOICE
+Angry music,VOICE
+Scary music,VOICE
+Wind,NATURE
+Rustling leaves,NATURE
+Wind noise (microphone),NATURE
+Thunderstorm,NATURE
+Thunder,NATURE
+Water,NATURE
+Rain,NATURE
+Raindrop,NATURE
+Rain on surface,NATURE
+Stream,NATURE
+Waterfall,NATURE
+Ocean,NATURE
+"Waves, surf",NATURE
+Steam,TRAFFIC
+Gurgling,VOICE
+Fire,UNKNOWN
+Crackle,TRAFFIC
+Vehicle,TRAFFIC
+"Boat, Water vehicle",TRAFFIC
+"Sailboat, sailing ship",TRAFFIC
+"Rowboat, canoe, kayak",TRAFFIC
+"Motorboat, speedboat",TRAFFIC
+Ship,TRAFFIC
+Motor vehicle (road),TRAFFIC
+Car,TRAFFIC
+"Vehicle horn, car horn, honking",TRAFFIC
+Toot,TRAFFIC
+Car alarm,TRAFFIC
+"Power windows, electric windows",TRAFFIC
+Skidding,TRAFFIC
+Tire squeal,TRAFFIC
+Car passing by,TRAFFIC
+"Race car, auto racing",TRAFFIC
+Truck,TRAFFIC
+Air brake,TRAFFIC
+"Air horn, truck horn",TRAFFIC
+Reversing beeps,TRAFFIC
+"Ice cream truck, ice cream van",TRAFFIC
+Bus,TRAFFIC
+Emergency vehicle,TRAFFIC
+Police car (siren),TRAFFIC
+Ambulance (siren),TRAFFIC
+"Fire engine, fire truck (siren)",TRAFFIC
+Motorcycle,TRAFFIC
+"Traffic noise, roadway noise",TRAFFIC
+Rail transport,TRAFFIC
+Train,TRAFFIC
+Train whistle,TRAFFIC
+Train horn,TRAFFIC
+"Railroad car, train wagon",TRAFFIC
+Train wheels squealing,TRAFFIC
+"Subway, metro, underground",TRAFFIC
+Aircraft,TRAFFIC
+Aircraft engine,TRAFFIC
+Jet engine,TRAFFIC
+"Propeller, airscrew",TRAFFIC
+Helicopter,TRAFFIC
+"Fixed-wing aircraft, airplane",TRAFFIC
+Bicycle,TRAFFIC
+Skateboard,TRAFFIC
+Engine,TRAFFIC
+Light engine (high frequency),TRAFFIC
+"Dental drill, dentist's drill",TRAFFIC
+Lawn mower,HOUSEHOLD
+Chainsaw,TRAFFIC
+Medium engine (mid frequency),TRAFFIC
+Heavy engine (low frequency),TRAFFIC
+Engine knocking,TRAFFIC
+Engine starting,TRAFFIC
+Idling,TRAFFIC
+"Accelerating, revving, vroom",TRAFFIC
+Door,HOUSEHOLD
+Doorbell,HOUSEHOLD
+Ding-dong,HOUSEHOLD
+Sliding door,HOUSEHOLD
+Slam,TRAFFIC
+Knock,HOUSEHOLD
+Tap,HOUSEHOLD
+Squeak,HOUSEHOLD
+Cupboard open or close,HOUSEHOLD
+Drawer open or close,HOUSEHOLD
+"Dishes, pots, and pans",HOUSEHOLD
+"Cutlery, silverware",HOUSEHOLD
+Chopping (food),HOUSEHOLD
+Frying (food),HOUSEHOLD
+Microwave oven,HOUSEHOLD
+Blender,HOUSEHOLD
+"Water tap, faucet",HOUSEHOLD
+Sink (filling or washing),HOUSEHOLD
+Bathtub (filling or washing),HOUSEHOLD
+Hair dryer,HOUSEHOLD
+Toilet flush,HOUSEHOLD
+Toothbrush,HOUSEHOLD
+Electric toothbrush,HOUSEHOLD
+Vacuum cleaner,HOUSEHOLD
+Zipper (clothing),HOUSEHOLD
+Keys jangling,HOUSEHOLD
+Coin (dropping),HOUSEHOLD
+Scissors,HOUSEHOLD
+"Electric shaver, electric razor",HOUSEHOLD
+Shuffling cards,HOUSEHOLD
+Typing,HOUSEHOLD
+Typewriter,HOUSEHOLD
+Computer keyboard,HOUSEHOLD
+Writing,HOUSEHOLD
+Alarm,ALERT
+Telephone,ALERT
+Telephone bell ringing,ALERT
+Ringtone,ALERT
+"Telephone dialing, DTMF",ALERT
+Dial tone,ALERT
+Busy signal,ALERT
+Alarm clock,ALERT
+Siren,ALERT
+Civil defense siren,ALERT
+Buzzer,ALERT
+"Smoke detector, smoke alarm",ALERT
+Fire alarm,ALERT
+Foghorn,TRAFFIC
+Whistle,TRAFFIC
+Steam whistle,TRAFFIC
+Mechanisms,TRAFFIC
+"Ratchet, pawl",TRAFFIC
+Clock,ALERT
+Tick,ALERT
+Tick-tock,ALERT
+Gears,TRAFFIC
+Pulleys,TRAFFIC
+Sewing machine,HOUSEHOLD
+Mechanical fan,HOUSEHOLD
+Air conditioning,HOUSEHOLD
+Cash register,TRAFFIC
+Printer,HOUSEHOLD
+Camera,HOUSEHOLD
+Single-lens reflex camera,HOUSEHOLD
+Tools,TRAFFIC
+Hammer,TRAFFIC
+Jackhammer,TRAFFIC
+Sawing,TRAFFIC
+Filing (rasp),TRAFFIC
+Sanding,TRAFFIC
+Power tool,TRAFFIC
+Drill,TRAFFIC
+Explosion,TRAFFIC
+"Gunshot, gunfire",TRAFFIC
+Machine gun,TRAFFIC
+Fusillade,TRAFFIC
+Artillery fire,TRAFFIC
+Cap gun,TRAFFIC
+Fireworks,TRAFFIC
+Firecracker,TRAFFIC
+"Burst, pop",TRAFFIC
+Eruption,TRAFFIC
+Boom,TRAFFIC
+Wood,TRAFFIC
+Chop,TRAFFIC
+Splinter,TRAFFIC
+Crack,TRAFFIC
+Glass,HOUSEHOLD
+"Chink, clink",HOUSEHOLD
+Shatter,HOUSEHOLD
+Liquid,NATURE
+"Splash, splatter",NATURE
+Slosh,NATURE
+Squish,NATURE
+Drip,NATURE
+Pour,NATURE
+"Trickle, dribble",NATURE
+Gush,NATURE
+Fill (with liquid),NATURE
+Spray,HOUSEHOLD
+Pump (liquid),HOUSEHOLD
+Stir,HOUSEHOLD
+Boiling,HOUSEHOLD
+Sonar,ALERT
+Arrow,TRAFFIC
+"Whoosh, swoosh, swish",TRAFFIC
+"Thump, thud",TRAFFIC
+Thunk,TRAFFIC
+Electronic tuner,TRAFFIC
+Effects unit,TRAFFIC
+Chorus effect,TRAFFIC
+Basketball bounce,TRAFFIC
+Bang,TRAFFIC
+"Slap, smack",TRAFFIC
+"Whack, thwack",TRAFFIC
+"Smash, crash",TRAFFIC
+Breaking,TRAFFIC
+Bouncing,TRAFFIC
+Whip,TRAFFIC
+Flap,TRAFFIC
+Scratch,TRAFFIC
+Scrape,TRAFFIC
+Rub,TRAFFIC
+Roll,TRAFFIC
+Crushing,TRAFFIC
+"Crumpling, crinkling",HOUSEHOLD
+Tearing,TRAFFIC
+"Beep, bleep",ALERT
+Ping,ALERT
+Ding,ALERT
+Clang,ALERT
+Squeal,VOICE
+Creak,HOUSEHOLD
+Rustle,HOUSEHOLD
+Whir,TRAFFIC
+Clatter,HOUSEHOLD
+Sizzle,HOUSEHOLD
+Clicking,HOUSEHOLD
+Clickety-clack,TRAFFIC
+Rumble,TRAFFIC
+Plop,TRAFFIC
+"Jingle, tinkle",HOUSEHOLD
+Hum,HOUSEHOLD
+Zing,TRAFFIC
+Boing,HOUSEHOLD
+Crunch,HOUSEHOLD
+Silence,UNKNOWN
+Sine wave,NATURE
+Harmonic,VOICE
+Chirp tone,NATURE
+Sound effect,VOICE
+Pulse,TRAFFIC
+"Inside, small room",HOUSEHOLD
+"Inside, large room or hall",TRAFFIC
+"Inside, public space",TRAFFIC
+"Outside, urban or manmade",TRAFFIC
+"Outside, rural or natural",TRAFFIC
+Reverberation,TRAFFIC
+Echo,HOUSEHOLD
+Noise,TRAFFIC
+Environmental noise,TRAFFIC
+Static,HOUSEHOLD
+Mains hum,HOUSEHOLD
+Distortion,HOUSEHOLD
+Sidetone,HOUSEHOLD
+Cacophony,HOUSEHOLD
+White noise,HOUSEHOLD
+Pink noise,HOUSEHOLD
+Throbbing,HOUSEHOLD
+Vibration,HOUSEHOLD
+Television,VOICE
+Radio,VOICE
+Field recording,VOICE

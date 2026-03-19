@@ -18,21 +18,31 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
-import com.calmspace.service.AudioFadeConfig.AMBIENT_PLAYBACK_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_FADE_IN_STEP_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN_DURATION_MS
+import com.calmspace.service.AudioTimingConfig.GENERATED_NOISE_HEADPHONE_FADE_IN_STEPS
 import com.calmspace.masking.MaskingDecisionEngine
+import com.calmspace.masking.MaskingDecision
 import com.calmspace.masking.MaskingBucket
+import com.calmspace.masking.YamnetLabelBucketResolver
 import com.calmspace.masking.smoothMaskingVolume
+import com.calmspace.service.AudioTimingConfig.MASKING_INFERENCE_MS
+import com.calmspace.service.AudioTimingConfig.MASKING_DECISION_PROFILE
+import com.calmspace.service.AudioTimingConfig.MASKING_TOP_PREDICTIONS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.tensorflow.lite.support.audio.TensorAudio
 import org.tensorflow.lite.task.audio.classifier.AudioClassifier
+import org.tensorflow.lite.task.audio.classifier.Classifications
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.log10
 import kotlin.math.sqrt
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import androidx.core.app.ActivityCompat
+import java.util.concurrent.ArrayBlockingQueue
 import kotlin.random.Random
 
 // ─────────────────────────────────────────────────────────────────────
@@ -89,10 +99,8 @@ class NoiseMonitorService : Service() {
         private const val SAMPLE_RATE = 44100
         private const val VISUALIZER_UPDATE_MS = 33L
         private const val STATUS_UPDATE_MS = 100L
-        private const val MASKING_INFERENCE_MS = 300L
         private const val MASKING_SILENCE_RELEASE_DELAY_MS = 2500L
         private const val MASKING_MODEL_FILENAME = "yamnet.tflite"
-        private const val GENERATED_NOISE_FADE_IN_STEP_MS = 16L
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -148,7 +156,14 @@ class NoiseMonitorService : Service() {
     @Volatile private var isMaskingAutomationEnabled = false
     private var maskingClassifier: AudioClassifier? = null
     private var maskingTensorAudio: TensorAudio? = null
-    private val maskingDecisionEngine = MaskingDecisionEngine()
+    private val yamnetLabelBucketResolver by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        YamnetLabelBucketResolver.fromAssets(this.assets)
+    }
+
+    private val maskingDecisionEngine = MaskingDecisionEngine(
+        policy = MASKING_DECISION_PROFILE,
+        labelToBucket = { label -> yamnetLabelBucketResolver.resolve(label) }
+    )
 
     private var running = false
 
@@ -161,6 +176,10 @@ class NoiseMonitorService : Service() {
     @Volatile private var fadeInGain = 0f
     @Volatile private var isGeneratedNoisePlaybackEnabled = false
     @Volatile private var isHeadphoneFadeInActive = false
+
+    private val maskingInferenceQueue = ArrayBlockingQueue<MaskingInferenceRequest>(4)
+    private var maskingInferenceThread: Thread? = null
+    private val isMaskingInferenceRunning = AtomicBoolean(false)
 
     // Pink noise generator state (Paul Kellett's refined method)
     private var b0 = 0.0; private var b1 = 0.0; private var b2 = 0.0
@@ -217,6 +236,7 @@ class NoiseMonitorService : Service() {
     override fun onDestroy() {
         stopRecording()
         releaseAudioTrack()
+        stopMaskingInferenceWorker()
         stopMaskingClassifier()
 
         // TODO: Unregister headphone callback
@@ -288,7 +308,7 @@ class NoiseMonitorService : Service() {
             val startedAt = SystemClock.elapsedRealtime()
             while (isNoiseThreadRunning.get()) {
                 val elapsed = SystemClock.elapsedRealtime() - startedAt
-                val fraction = (elapsed.toFloat() / AMBIENT_PLAYBACK_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+                val fraction = (elapsed.toFloat() / GENERATED_NOISE_FADE_IN_DURATION_MS.toFloat()).coerceIn(0f, 1f)
                 fadeInGain = clampedTarget * (fraction * fraction)
                 applyNoiseTrackVolume()
 
@@ -332,6 +352,7 @@ class NoiseMonitorService : Service() {
 
         if (isMaskingAutomationEnabled) {
             maskingDecisionEngine.reset(clampedVolume)
+            maskingInferenceQueue.clear()
             _automatedTargetVolume.value = clampedVolume
             // For automation mode, treat slider as baseline and let the engine re-target from there.
             if (!isNoiseThreadRunning.get()) {
@@ -361,10 +382,16 @@ class NoiseMonitorService : Service() {
         isMaskingAutomationEnabled = enabled
         if (enabled) {
             initMaskingClassifier()
+            startMaskingInferenceWorker()
             maskingDecisionEngine.reset(_startingVolume.value)
+            _currentMaskingBucket.value = "Listening..."
+            _currentTopPrediction.value = ""
             _automatedTargetVolume.value = _startingVolume.value
             _automatedDecisionReason.value = "YAMNet automation ready"
         } else {
+            stopMaskingInferenceWorker()
+            _currentMaskingBucket.value = ""
+            _currentTopPrediction.value = ""
             _automatedDecisionReason.value = "YAMNet automation disabled"
             _automatedTargetVolume.value = _startingVolume.value
         }
@@ -430,6 +457,7 @@ class NoiseMonitorService : Service() {
 
                 if (isMaskingAutomationEnabled) {
                     initMaskingClassifier()
+                    startMaskingInferenceWorker()
                 }
 
                 recorder?.startRecording()
@@ -516,7 +544,7 @@ class NoiseMonitorService : Service() {
 
                         val nowMs = System.currentTimeMillis()
 
-                        val ambientTargetVolume = if (excess > 0) {
+                        val amplitudeBasedTargetVolume = if (excess > 0) {
                             val t = (excess / 30f).coerceIn(0f, 1f)
                             (floor + sqrt(t) * (1f - floor)).coerceIn(floor, 1f)
                         } else {
@@ -524,16 +552,23 @@ class NoiseMonitorService : Service() {
                         }
 
                         if (isMaskingAutomationEnabled) {
-                            // Option A (YAMNet): derive target from audio classes in a
-                            // rolling 2s window and move current volume toward target.
                             // --- YAMNet-driven control path ---
-                            if (latestDb > eventThreshold) {
-                                lastLoudWindowMs = nowMs
-                                if (read > 0 && nowMs - lastInferenceMs >= MASKING_INFERENCE_MS) {
-                                    updateMaskingDecisionFromAudioWindow(buf, read, floor)
-                                    lastInferenceMs = nowMs
+                            val shouldRunMaskingInference = nowMs - lastInferenceMs >= MASKING_INFERENCE_MS
+                            if (shouldRunMaskingInference) {
+                                if (latestDb > eventThreshold && read > 0) {
+                                    lastLoudWindowMs = nowMs
+                                    enqueueMaskingInference(buf, read, floor, nowMs)
+                                } else {
+                                    applyMaskingDecisionFromPredictions(
+                                        maskingDecisionEngine.evaluate(emptyList(), nowMs, floor),
+                                        topPredictions = emptyList()
+                                    )
                                 }
-                            } else if (nowMs - lastLoudWindowMs >= MASKING_SILENCE_RELEASE_DELAY_MS &&
+                                lastInferenceMs = nowMs
+                            }
+
+                            if (latestDb <= eventThreshold &&
+                                nowMs - lastLoudWindowMs >= MASKING_SILENCE_RELEASE_DELAY_MS &&
                                 _automatedTargetVolume.value > floor
                             ) {
                                 // Long-tail decay behavior: if no relevant ambient event is
@@ -545,18 +580,19 @@ class NoiseMonitorService : Service() {
                             currentMaskingVolume = smoothMaskingVolume(
                                 current = currentMaskingVolume,
                                 target = _automatedTargetVolume.value,
-                                deltaMs = nowMs - lastAutomationSmoothingMs
+                                deltaMs = nowMs - lastAutomationSmoothingMs,
+                                attackRatePerMs = MASKING_DECISION_PROFILE.attackRatePerMs,
+                                releaseRatePerMs = MASKING_DECISION_PROFILE.releaseRatePerMs
                             )
                             lastAutomationSmoothingMs = nowMs
                         } else {
-                            // Legacy path: envelope-based control remains untouched for
-                            // compatibility and non-YAMNet operation.
-                            // --- Existing amplitude-driven control path ---
-                            currentMaskingVolume = if (ambientTargetVolume > currentMaskingVolume) {
-                                (currentMaskingVolume * ATTACK_SMOOTHING + ambientTargetVolume * (1f - ATTACK_SMOOTHING))
+                            // Amplitude-based control path (non-YAMNet mode).
+                            // Uses envelope/energy target and compatibility smoothing.
+                            currentMaskingVolume = if (amplitudeBasedTargetVolume > currentMaskingVolume) {
+                                (currentMaskingVolume * ATTACK_SMOOTHING + amplitudeBasedTargetVolume * (1f - ATTACK_SMOOTHING))
                                     .coerceIn(floor, 1f)
                             } else {
-                                (currentMaskingVolume * DECAY_SMOOTHING + ambientTargetVolume * (1f - DECAY_SMOOTHING))
+                                (currentMaskingVolume * DECAY_SMOOTHING + amplitudeBasedTargetVolume * (1f - DECAY_SMOOTHING))
                                     .coerceAtLeast(floor)
                             }
                         }
@@ -602,6 +638,9 @@ class NoiseMonitorService : Service() {
                                 "ambient: ${latestDb.toInt()} dB | mask: ${(currentMaskingVolume * 100).toInt()}%"
                             lastStatusUpdate = now
                         }
+                    } else {
+                        // Avoid a hot spin if AudioRecord returns non-positive values.
+                        Thread.sleep(2)
                     }
                 }
 
@@ -639,6 +678,7 @@ class NoiseMonitorService : Service() {
         stopWhiteNoise()
         _automatedDecisionReason.value = "Session ended"
         _automatedTargetVolume.value = _startingVolume.value
+        stopMaskingInferenceWorker()
         stopMaskingClassifier()
         // Do not call recorder?.stop() here — the recording thread's finally block
         // handles its own cleanup. Calling stop() from two threads races and throws
@@ -656,8 +696,8 @@ class NoiseMonitorService : Service() {
     private fun startFadeIn(targetVolume: Float) {
         isHeadphoneFadeInActive = true
         Thread {
-            val steps = 30
-            val stepMs = 50L
+            val steps = GENERATED_NOISE_HEADPHONE_FADE_IN_STEPS
+            val stepMs = GENERATED_NOISE_HEADPHONE_FADE_IN_DURATION_MS / steps.toLong()
             audioTrack?.setVolume(0f)
             for (i in 1..steps) {
                 Thread.sleep(stepMs)
@@ -693,6 +733,8 @@ class NoiseMonitorService : Service() {
         }.onFailure {
             isMaskingAutomationEnabled = false
             _automatedDecisionReason.value = "YAMNet unavailable"
+            _currentMaskingBucket.value = ""
+            _currentTopPrediction.value = ""
         }
     }
 
@@ -702,10 +744,73 @@ class NoiseMonitorService : Service() {
         maskingTensorAudio = null
     }
 
+    private fun startMaskingInferenceWorker() {
+        if (!isMaskingAutomationEnabled || isMaskingInferenceRunning.get()) return
+        maskingInferenceQueue.clear()
+        isMaskingInferenceRunning.set(true)
+        maskingInferenceThread = Thread {
+            while (isMaskingInferenceRunning.get()) {
+                try {
+                    val request = maskingInferenceQueue.take()
+                    if (!isMaskingInferenceRunning.get()) {
+                        break
+                    }
+                    updateMaskingDecisionFromAudioWindow(
+                        buffer = request.buffer,
+                        read = request.read,
+                        baseline = request.baseline,
+                        decisionTimeMs = request.decisionTimeMs
+                    )
+                } catch (_: InterruptedException) {
+                    // Stop path interrupts the worker thread.
+                }
+            }
+        }.apply {
+            start()
+        }
+    }
+
+    private fun stopMaskingInferenceWorker() {
+        if (!isMaskingInferenceRunning.getAndSet(false)) return
+        maskingInferenceThread?.interrupt()
+        maskingInferenceThread = null
+        maskingInferenceQueue.clear()
+    }
+
+    private fun enqueueMaskingInference(
+        buffer: ShortArray,
+        read: Int,
+        baseline: Float,
+        decisionTimeMs: Long
+    ) {
+        if (!isMaskingAutomationEnabled || !isMaskingInferenceRunning.get()) return
+        val copied = buffer.copyOfRange(0, read)
+        val request = MaskingInferenceRequest(
+            buffer = copied,
+            read = copied.size,
+            baseline = baseline,
+            decisionTimeMs = decisionTimeMs
+        )
+
+        if (!maskingInferenceQueue.offer(request)) {
+            // Drop the oldest pending window to keep latency bounded.
+            maskingInferenceQueue.poll()
+            maskingInferenceQueue.offer(request)
+        }
+    }
+
+    private data class MaskingInferenceRequest(
+        val buffer: ShortArray,
+        val read: Int,
+        val baseline: Float,
+        val decisionTimeMs: Long
+    )
+
     private fun updateMaskingDecisionFromAudioWindow(
         buffer: ShortArray,
         read: Int,
-        baseline: Float
+        baseline: Float,
+        decisionTimeMs: Long = System.currentTimeMillis()
     ) {
         val classifier = maskingClassifier ?: return
         val tensorAudio = maskingTensorAudio ?: return
@@ -713,26 +818,63 @@ class NoiseMonitorService : Service() {
         runCatching {
             tensorAudio.load(buffer, 0, read)
             val results = classifier.classify(tensorAudio)
-            val topPredictions = results
-                .flatMap { result -> result.categories }
-                .sortedByDescending { it.score }
-                .take(5)
-                .map { category -> category.label to category.score.toFloat() }
+            val topPredictions = buildTopPredictions(results)
 
-            val decision = maskingDecisionEngine.evaluate(topPredictions, System.currentTimeMillis(), baseline)
-            _automatedDecisionReason.value = "${decision.displayWinner}: ${decision.reason}"
-            _currentMaskingBucket.value = decision.displayWinner
-            _currentTopPrediction.value = if (decision.winner == MaskingBucket.UNKNOWN) {
-                ""
-            } else {
-                topPredictions.firstOrNull()?.first.orEmpty()
-            }
-
-            if (decision.shouldAffectPlayback) {
-                _automatedTargetVolume.value = decision.targetVolume
-            }
+            val decision = maskingDecisionEngine.evaluate(topPredictions, decisionTimeMs, baseline)
+            applyMaskingDecisionFromPredictions(
+                decision,
+                topPredictions = topPredictions
+            )
         }.onFailure {
             _automatedDecisionReason.value = "YAMNet classification failed"
+        }
+    }
+
+    private fun buildTopPredictions(results: List<Classifications>): MutableList<Pair<String, Float>> {
+        val topPredictions = ArrayList<Pair<String, Float>>(MASKING_TOP_PREDICTIONS)
+
+        for (result in results) {
+            for (category in result.categories) {
+                val score = category.score.toFloat()
+                val label = category.label
+
+                var inserted = false
+                for (index in topPredictions.indices) {
+                    if (score > topPredictions[index].second) {
+                        topPredictions.add(index, label to score)
+                        inserted = true
+                        break
+                    }
+                }
+
+                if (!inserted && topPredictions.size < MASKING_TOP_PREDICTIONS) {
+                    topPredictions.add(label to score)
+                    inserted = true
+                }
+
+                if (topPredictions.size > MASKING_TOP_PREDICTIONS) {
+                    topPredictions.removeAt(topPredictions.size - 1)
+                }
+            }
+        }
+
+        return topPredictions
+    }
+
+    private fun applyMaskingDecisionFromPredictions(
+        decision: MaskingDecision,
+        topPredictions: List<Pair<String, Float>> = emptyList()
+    ) {
+        _automatedDecisionReason.value = "${decision.displayWinner}: ${decision.reason}"
+        _currentMaskingBucket.value = decision.displayWinner
+        _currentTopPrediction.value = if (decision.winner == MaskingBucket.UNKNOWN) {
+            ""
+        } else {
+            topPredictions.firstOrNull()?.first.orEmpty()
+        }
+
+        if (decision.shouldAffectPlayback) {
+            _automatedTargetVolume.value = decision.targetVolume
         }
     }
 
