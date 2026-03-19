@@ -22,6 +22,7 @@ object AudioTimingConfig {
     // Tunables for the shared V1 masking profile.
     const val MASKING_VOLUME_ATTACK_RATE_PER_MS = 0.00030f
     const val MASKING_VOLUME_RELEASE_RATE_PER_MS = 0.00005f
+    const val MASKING_SILENCE_RETURN_RATE_PER_MS = 0.00002f
     const val MASKING_SMOOTHING_EMA_TAU_MS = 280L
     const val MASKING_UNKNOWN_RECOVERY_STEPS = 2
     const val MASKING_CONSENSUS_REQUIRED_STEPS = 2
@@ -31,6 +32,9 @@ object AudioTimingConfig {
     const val MASKING_MIN_WINNER_SCORE = 0.05f
     const val MASKING_MIN_WINNER_MARGIN = 0.010f
     const val MASKING_STRONG_WINNER_SCORE = 0.40f
+    const val MASKING_AUTOMATION_REFERENCE_DB_MIN = -65f
+    const val MASKING_AUTOMATION_REFERENCE_DB_MAX = -15f
+    const val MASKING_AUTOMATION_DUCKING_FACTOR = 0.65f
 
     val MASKING_DECISION_PROFILE = MaskingDecisionPolicy(
         smoothingTauMs = MASKING_SMOOTHING_EMA_TAU_MS,
@@ -38,6 +42,7 @@ object AudioTimingConfig {
         unknownRecoverySteps = MASKING_UNKNOWN_RECOVERY_STEPS,
         attackRatePerMs = MASKING_VOLUME_ATTACK_RATE_PER_MS,
         releaseRatePerMs = MASKING_VOLUME_RELEASE_RATE_PER_MS,
+        // Keep response and decay conservative for masking automation.
         minWinnerScore = MASKING_MIN_WINNER_SCORE,
         minWinnerMargin = MASKING_MIN_WINNER_MARGIN,
         strongWinnerScore = MASKING_STRONG_WINNER_SCORE,

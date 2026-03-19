@@ -38,6 +38,7 @@ import org.tensorflow.lite.task.audio.classifier.AudioClassifier
 import org.tensorflow.lite.task.audio.classifier.Classifications
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.log10
+import kotlin.math.max
 import kotlin.math.sqrt
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -101,6 +102,7 @@ class NoiseMonitorService : Service() {
         private const val STATUS_UPDATE_MS = 100L
         private const val MASKING_SILENCE_RELEASE_DELAY_MS = 2500L
         private const val MASKING_MODEL_FILENAME = "yamnet.tflite"
+        private const val PLAYBACK_DB_FLOOR_DB = -80f
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -180,6 +182,7 @@ class NoiseMonitorService : Service() {
     private val maskingInferenceQueue = ArrayBlockingQueue<MaskingInferenceRequest>(4)
     private var maskingInferenceThread: Thread? = null
     private val isMaskingInferenceRunning = AtomicBoolean(false)
+    @Volatile private var generatedNoiseDbfs = -80f
 
     // Pink noise generator state (Paul Kellett's refined method)
     private var b0 = 0.0; private var b1 = 0.0; private var b2 = 0.0
@@ -273,6 +276,11 @@ class NoiseMonitorService : Service() {
                 for (i in noiseBuf.indices) {
                     noiseBuf[i] = nextSample(type)
                 }
+                generatedNoiseDbfs = estimateGeneratedNoiseDbfs(
+                    buffer = noiseBuf,
+                    gain = currentPlaybackGainForEstimation()
+                )
+
                 // Keep volume synchronized with the fade/automation layer
                 // while the generator thread is actively writing audio.
                 if (isNoiseFadeInActive || currentMaskingVolume > 0f) {
@@ -292,6 +300,7 @@ class NoiseMonitorService : Service() {
         fadeInThread = null
         isNoiseFadeInActive = false
         fadeInGain = 0f
+        generatedNoiseDbfs = PLAYBACK_DB_FLOOR_DB
 
         // Do not join here — this may be called from the main thread (button click).
         // The thread will exit on its own once the flag is false.
@@ -561,6 +570,7 @@ class NoiseMonitorService : Service() {
                                 } else {
                                     applyMaskingDecisionFromPredictions(
                                         maskingDecisionEngine.evaluate(emptyList(), nowMs, floor),
+                                        baseline = floor,
                                         topPredictions = emptyList()
                                     )
                                 }
@@ -572,8 +582,11 @@ class NoiseMonitorService : Service() {
                                 _automatedTargetVolume.value > floor
                             ) {
                                 // Long-tail decay behavior: if no relevant ambient event is
-                                // detected for a short while, return to baseline and decay slowly.
-                                _automatedTargetVolume.value = floor
+                                // detected for a short while, return to baseline slowly.
+                                val decay = (nowMs - lastAutomationSmoothingMs).toFloat() *
+                                    AudioTimingConfig.MASKING_SILENCE_RETURN_RATE_PER_MS
+                                _automatedTargetVolume.value =
+                                    (_automatedTargetVolume.value - decay).coerceAtLeast(floor)
                                 _automatedDecisionReason.value = "Silence detected, returning to baseline"
                             }
 
@@ -823,7 +836,8 @@ class NoiseMonitorService : Service() {
             val decision = maskingDecisionEngine.evaluate(topPredictions, decisionTimeMs, baseline)
             applyMaskingDecisionFromPredictions(
                 decision,
-                topPredictions = topPredictions
+                topPredictions = topPredictions,
+                baseline = baseline
             )
         }.onFailure {
             _automatedDecisionReason.value = "YAMNet classification failed"
@@ -863,7 +877,8 @@ class NoiseMonitorService : Service() {
 
     private fun applyMaskingDecisionFromPredictions(
         decision: MaskingDecision,
-        topPredictions: List<Pair<String, Float>> = emptyList()
+        topPredictions: List<Pair<String, Float>> = emptyList(),
+        baseline: Float = _startingVolume.value
     ) {
         _automatedDecisionReason.value = "${decision.displayWinner}: ${decision.reason}"
         _currentMaskingBucket.value = decision.displayWinner
@@ -874,8 +889,55 @@ class NoiseMonitorService : Service() {
         }
 
         if (decision.shouldAffectPlayback) {
-            _automatedTargetVolume.value = decision.targetVolume
+            _automatedTargetVolume.value = dampenTargetWithPlaybackLoudness(
+                target = decision.targetVolume,
+                baseline = baseline
+            )
         }
+    }
+
+    private fun dampenTargetWithPlaybackLoudness(target: Float, baseline: Float): Float {
+        if (!isNoiseThreadRunning.get()) {
+            return target
+        }
+
+        val clampedBaseline = baseline.coerceIn(0f, 1f)
+        val playbackDb = generatedNoiseDbfs
+        val normalizedLoudness = if (AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MAX -
+            AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MIN <= 0f
+        ) {
+            0f
+        } else {
+            ((playbackDb - AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MIN) /
+                    (AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MAX -
+                            AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MIN)).coerceIn(0f, 1f)
+        }
+        val duckAmount = normalizedLoudness * AudioTimingConfig.MASKING_AUTOMATION_DUCKING_FACTOR
+        val targetIncrease = max(0f, target - clampedBaseline)
+        return (clampedBaseline + targetIncrease * (1f - duckAmount)).coerceIn(clampedBaseline, 1f)
+    }
+
+    private fun currentPlaybackGainForEstimation(): Float {
+        return if (isNoiseFadeInActive) {
+            fadeInGain.coerceIn(0f, 1f)
+        } else {
+            currentMaskingVolume.coerceIn(0f, 1f)
+        }
+    }
+
+    private fun estimateGeneratedNoiseDbfs(buffer: ShortArray, gain: Float): Float {
+        if (buffer.isEmpty()) return PLAYBACK_DB_FLOOR_DB
+
+        var sumSquares = 0.0
+        for (sample in buffer) {
+            val amplified = sample.toDouble() * gain
+            sumSquares += amplified * amplified
+        }
+
+        val rms = sqrt(sumSquares / buffer.size)
+        if (rms <= 0.0) return PLAYBACK_DB_FLOOR_DB
+
+        return (20.0 * log10(rms / 32767.0)).toFloat()
     }
 
     private fun initAudioTrack() {
