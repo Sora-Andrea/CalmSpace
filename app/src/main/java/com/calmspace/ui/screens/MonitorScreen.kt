@@ -376,7 +376,10 @@ fun MonitorScreen(
             modifier = Modifier.size(220.dp),
             contentAlignment = Alignment.Center
         ) {
-            MonitorRingsDisplay()
+            MonitorRingsDisplay(
+                isRecording = isRecording,
+                amplitude = visualizerLevels.lastOrNull() ?: 0f
+            )
             AmplitudeVisualizer(
                 levels = visualizerLevels,
                 modifier = Modifier.fillMaxSize(),

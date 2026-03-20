@@ -40,6 +40,7 @@ import com.calmspace.ui.player.PlaybackTrack
 import com.calmspace.ui.player.PlaybackTrackOption
 import com.calmspace.ui.player.PrecomputedPlaybackTracks
 import com.calmspace.ui.player.mediaPlayerScreen
+import com.calmspace.ui.theme.AppTheme
 import com.calmspace.ui.theme.CalmSpaceTheme
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -99,6 +100,8 @@ class MainActivity : ComponentActivity() {
         private const val PLAYBACK_VISUALIZER_UPDATE_MS = 33L
     }
 
+    private val selectedThemeState = mutableStateOf(AppTheme.DEEP_WATER)
+
     private var exoPlayer: ExoPlayer? = null
     private val isLoopPlayingState = mutableStateOf(false)
     private val availablePlaybackTracks = PrecomputedPlaybackTracks.tracks
@@ -143,6 +146,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val prefs = getSharedPreferences("calmspace_prefs", MODE_PRIVATE)
+        selectedThemeState.value = runCatching {
+            AppTheme.valueOf(prefs.getString("app_theme", AppTheme.DEEP_WATER.name) ?: "")
+        }.getOrDefault(AppTheme.DEEP_WATER)
         val startDestination = Routes.MONITOR
         // Future code for auto logging in users already logged in
         //val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
@@ -154,7 +161,7 @@ class MainActivity : ComponentActivity() {
         refreshPlaybackLevelsFromSelectedTrack(0)
 
         setContent {
-            CalmSpaceTheme {
+            CalmSpaceTheme(theme = selectedThemeState.value) {
 
                 val navController = rememberNavController()
                 val currentRoute = navController
@@ -378,6 +385,12 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigateToMediaPlayer = {
                                     navController.navigate(Routes.MEDIA_PLAYER)
+                                },
+                                currentTheme = selectedThemeState.value,
+                                onThemeSelected = { theme ->
+                                    selectedThemeState.value = theme
+                                    getSharedPreferences("calmspace_prefs", MODE_PRIVATE)
+                                        .edit().putString("app_theme", theme.name).apply()
                                 }
                             )
                         }
