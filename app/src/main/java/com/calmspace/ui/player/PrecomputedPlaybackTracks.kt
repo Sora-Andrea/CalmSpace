@@ -6,9 +6,10 @@ import com.calmspace.R
 data class PlaybackTrack(
     val id: String,
     val title: String,
-    val rawResId: Int,
-    val envelopeHopMs: Int,
-    val envelopeDbfsLevels: FloatArray
+    val rawResId: Int = 0,   // default for user tracks
+    val envelopeHopMs: Int = 0,
+    val envelopeDbfsLevels: FloatArray = floatArrayOf(),
+    val uriString: String? = null
 )
 
 object PrecomputedPlaybackTracks {

@@ -46,7 +46,8 @@ fun mediaPlayerScreen(
     onOpenYamnetPoc: () -> Unit,
     onTogglePlayback: () -> Unit,
     onToggleMicrophone: () -> Unit,
-    onRequestMicrophonePermission: () -> Unit
+    onRequestMicrophonePermission: () -> Unit,
+    onImportAudio: () -> Unit
 ) {
     var trackMenuExpanded by remember { mutableStateOf(false) }
     val selectedTrackTitle = trackOptions.firstOrNull { it.id == selectedTrackId }?.title ?: "Select Track"
@@ -64,6 +65,12 @@ fun mediaPlayerScreen(
         }
 
         Spacer(modifier = Modifier.height(48.dp))
+
+        Button(onClick = onImportAudio) {
+            Text("Import Audio")
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // --- ExoPlayer Visualizer ---
         Text(text = "Playback Visualizer")
