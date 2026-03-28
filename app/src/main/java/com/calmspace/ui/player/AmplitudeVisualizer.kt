@@ -13,8 +13,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.min
 
 enum class AmplitudeVisualizerMode {
     HORIZONTAL,
@@ -77,18 +77,24 @@ fun AmplitudeVisualizer(
                 val angleStep = 360f / barCount
                 val startAngle = -90f // 12 o'clock
 
+                // Inner radius floor — bars must stop before reaching the center logo
+                val innerRadiusFloor = min(size.width, size.height) * 0.16f
+
+                // Primary ring — bars grow outward from ringRadius
                 levels.forEachIndexed { index, rawLevel ->
                     val level = rawLevel.coerceIn(0f, 1f)
                     val barLength = minBarLength + (maxBarLength - minBarLength) * level
                     val angle = startAngle + angleStep * index
                     val radians = Math.toRadians(angle.toDouble())
+                    val startRadius = ringRadius
+                    val endRadius = ringRadius + barLength
                     val start = Offset(
-                        centerX + ringRadius * cos(radians).toFloat(),
-                        centerY + ringRadius * sin(radians).toFloat()
+                        centerX + startRadius * cos(radians).toFloat(),
+                        centerY + startRadius * sin(radians).toFloat()
                     )
                     val end = Offset(
-                        centerX + (ringRadius + barLength) * cos(radians).toFloat(),
-                        centerY + (ringRadius + barLength) * sin(radians).toFloat()
+                        centerX + endRadius * cos(radians).toFloat(),
+                        centerY + endRadius * sin(radians).toFloat()
                     )
                     drawLine(
                         color = barColor.copy(alpha = (0.2f + 0.8f * level).coerceIn(0f, 1f)),
@@ -99,23 +105,23 @@ fun AmplitudeVisualizer(
                     )
                 }
 
-                // Secondary ring uses same radial anchor with a slight angular offset.
-                // This keeps source rings visually separated and reduces overlap clutter.
+                // Secondary (masking volume) ring — bars grow inward from the same ring
                 secondaryLevels?.let { secLevels ->
                     if (secLevels.isEmpty()) return@let
                     val secAngleStep = 360f / secLevels.size
                     secLevels.forEachIndexed { index, rawLevel ->
                         val level = rawLevel.coerceIn(0f, 1f)
                         val barLength = minBarLength + (maxBarLength - minBarLength) * level
-                        val angle = startAngle + secondaryAngleOffsetDeg + secAngleStep * index
+                        val angle = startAngle + secAngleStep * index
                         val radians = Math.toRadians(angle.toDouble())
                         val start = Offset(
                             centerX + ringRadius * cos(radians).toFloat(),
                             centerY + ringRadius * sin(radians).toFloat()
                         )
+                        val innerRadius = (ringRadius - barLength).coerceAtLeast(innerRadiusFloor)
                         val end = Offset(
-                            centerX + (ringRadius + barLength) * cos(radians).toFloat(),
-                            centerY + (ringRadius + barLength) * sin(radians).toFloat()
+                            centerX + innerRadius * cos(radians).toFloat(),
+                            centerY + innerRadius * sin(radians).toFloat()
                         )
                         drawLine(
                             color = secondaryBarColor.copy(alpha = (0.2f + 0.8f * level).coerceIn(0f, 1f)),
