@@ -70,7 +70,8 @@ fun MonitorScreen(
     onToggleTrackPlayback: () -> Unit,
     onTrackVolumeChange: (Float) -> Unit,
     onMaskingAutomationVolume: (Float) -> Unit,
-    onStopRecording: () -> Unit
+    onStopRecording: () -> Unit,
+    onImportAudio: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -469,6 +470,16 @@ fun MonitorScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // Import Audio button
+            Button(
+                onClick = onImportAudio,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Import Audio")
+            }
+            Spacer(modifier = Modifier.height(16.dp)) // optional spacing
         }
 
         // ───────── Start/Stop Session Button — always visible ─────────

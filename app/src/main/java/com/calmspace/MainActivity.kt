@@ -8,10 +8,14 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.Visualizer
+import android.net.Uri
+import androidx.media3.common.util.UnstableApi
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
@@ -45,7 +49,9 @@ import com.calmspace.ui.theme.CalmSpaceTheme
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.Log
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,6 +64,7 @@ import com.calmspace.service.AudioTimingConfig.EXO_PLAYBACK_FADE_IN_STEP_MS
 import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_DUCKING_FACTOR
 import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MAX
 import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MIN
+import com.calmspace.ui.player.UserTracksManager
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -102,10 +109,14 @@ class MainActivity : ComponentActivity() {
 
     private val selectedThemeState = mutableStateOf(AppTheme.DEEP_WATER)
 
+    private lateinit var userTracksManager: UserTracksManager
     private var exoPlayer: ExoPlayer? = null
+    private var visualizer: android.media.audiofx.Visualizer? = null
     private val isLoopPlayingState = mutableStateOf(false)
-    private val availablePlaybackTracks = PrecomputedPlaybackTracks.tracks
-    private val playbackTrackOptions = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
+    private val availablePlaybackTracks = PrecomputedPlaybackTracks.tracks.toMutableList()
+    private val playbackTrackOptionsState = mutableStateOf(
+        availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
+    )
     private val selectedTrackIdState = mutableStateOf(availablePlaybackTracks.firstOrNull()?.id.orEmpty())
     private val playbackLevelsState = mutableStateListOf<Float>().apply {
         repeat(VISUALIZER_BAR_COUNT) { add(0f) }
@@ -118,7 +129,7 @@ class MainActivity : ComponentActivity() {
     private val isMicRunningState = mutableStateOf(false)
     private val hasMicPermissionState = mutableStateOf(false)
 
-    private var playbackSyncJob: Job? = null
+    //private var playbackSyncJob: Job? = null
     private var playbackFadeInJob: Job? = null
     private var isExoFadeInInProgress = false
     private var pendingExoPlayerVolume = 1f
@@ -143,6 +154,37 @@ class MainActivity : ComponentActivity() {
         startMicVisualizerAfterPermissionGrant = false
     }
 
+    private val audioFilePickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { handleImportedAudioUri(it) }
+    }
+    private fun handleImportedAudioUri(uri: Uri) {
+        if (!userTracksManager.addUri(uri)) {
+            // Show a toast error (use a Snackbar or Toast)
+            return
+        }
+        val newTrack = userTracksManager.createTrackFromUri(uri) ?: return
+        addUserTrackToRuntimeList(newTrack, uri)
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun addUserTrackToRuntimeList(track: PlaybackTrack, uri: Uri) {
+        // Optional: verify MIME type
+        val mime = contentResolver.getType(uri)
+        if (mime == null || !mime.startsWith("audio/")) {
+            // Show error toast
+            return
+        }
+        availablePlaybackTracks.add(track)
+        playbackTrackOptionsState.value = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
+        selectPlaybackTrack(track.id)
+        // Test if the file is readable
+        try {
+            contentResolver.openInputStream(uri)?.close()
+            Log.d("ImportTest", "File is readable")
+        } catch (e: Exception) {
+            Log.e("ImportTest", "File not readable: ${e.message}")
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -158,6 +200,15 @@ class MainActivity : ComponentActivity() {
         //    Routes.WELCOME
         //}
         hasMicPermissionState.value = hasRecordAudioPermission()
+        userTracksManager = UserTracksManager(this)
+        val savedUris = userTracksManager.getSavedUris()
+        savedUris.forEach { uriString ->
+            val uri = Uri.parse(uriString)
+            userTracksManager.createTrackFromUri(uri)?.let { track ->
+                availablePlaybackTracks.add(track)
+            }
+        }
+        playbackTrackOptionsState.value = availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
         refreshPlaybackLevelsFromSelectedTrack(0)
 
         setContent {
@@ -257,8 +308,8 @@ class MainActivity : ComponentActivity() {
                         composable(Routes.MONITOR) {
                             val selectedMonitorTrackIdState = remember { mutableStateOf("white_noise") }
                             val isMonitoringSessionActiveState = remember { mutableStateOf(false) }
-                            val exoTrackIds = remember(playbackTrackOptions) {
-                                playbackTrackOptions.map { it.id }.toSet()
+                            val exoTrackIds = remember(playbackTrackOptionsState.value) {
+                                playbackTrackOptionsState.value.map { it.id }.toSet()
                             }
                             val isServiceTrack = remember(exoTrackIds) {
                                 { trackId: String -> !exoTrackIds.contains(trackId) }
@@ -272,8 +323,8 @@ class MainActivity : ComponentActivity() {
                                     PlaybackTrackOption(id = "grey_noise",   title = "Neutral Static"),
                                 )
                             }
-                            val monitorTrackOptions = remember(playbackTrackOptions, generatedNoiseTrackOptions) {
-                                playbackTrackOptions + generatedNoiseTrackOptions
+                            val monitorTrackOptions = remember(playbackTrackOptionsState.value, generatedNoiseTrackOptions) {
+                                playbackTrackOptionsState.value + generatedNoiseTrackOptions
                             }
 
                             LaunchedEffect(
@@ -368,7 +419,8 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate(Routes.HOME) {
                                         popUpTo(Routes.MONITOR) { inclusive = true }
                                     }
-                                }
+                                },
+                                onImportAudio = { audioFilePickerLauncher.launch(arrayOf("audio/*")) }
                             )
                         }
 
@@ -408,7 +460,7 @@ class MainActivity : ComponentActivity() {
                         composable(Routes.MEDIA_PLAYER) {
                             mediaPlayerScreen(
                                 isPlaying = isLoopPlayingState.value,
-                                trackOptions = playbackTrackOptions,
+                                trackOptions = playbackTrackOptionsState.value,   // use the state
                                 selectedTrackId = selectedTrackIdState.value,
                                 playerLevels = playbackLevelsState,
                                 playbackDbfs = playbackDbfsState.value,
@@ -420,7 +472,8 @@ class MainActivity : ComponentActivity() {
                                 onOpenYamnetPoc = { navController.navigate(Routes.YAMNET_POC) },
                                 onTogglePlayback = { toggleLoopPlayback() },
                                 onToggleMicrophone = { toggleMicrophoneVisualizer() },
-                                onRequestMicrophonePermission = { requestMicrophonePermissionForMicVisualizer() }
+                                onRequestMicrophonePermission = { requestMicrophonePermissionForMicVisualizer() },
+                                onImportAudio = { audioFilePickerLauncher.launch(arrayOf("audio/*")) }
                             )
                         }
 
@@ -449,26 +502,42 @@ class MainActivity : ComponentActivity() {
                     true
                 )
                 repeatMode = Player.REPEAT_MODE_ONE
+
+                // Add error listener
+                addListener(object : Player.Listener {
+                    @OptIn(UnstableApi::class)
+                    override fun onPlayerError(error: PlaybackException) {
+                        Log.e("ExoPlayer", "Error: ${error.message}", error)
+                    }
+
+                    @OptIn(UnstableApi::class)
+                    override fun onPlaybackStateChanged(state: Int) {
+                        Log.d("ExoPlayer", "State changed: $state")
+                        when (state) {
+                            Player.STATE_READY -> Log.d("ExoPlayer", "Player ready, audio should play")
+                            Player.STATE_ENDED -> Log.d("ExoPlayer", "Playback ended")
+                            Player.STATE_BUFFERING -> Log.d("ExoPlayer", "Buffering...")
+                            Player.STATE_IDLE -> Log.d("ExoPlayer", "Idle")
+                        }
+                    }
+                })
             }
         }
     }
 
-    private fun selectedPlaybackTrack() = PrecomputedPlaybackTracks.findById(selectedTrackIdState.value)
-
+    private fun selectedPlaybackTrack(): PlaybackTrack? {
+        return availablePlaybackTracks.firstOrNull { it.id == selectedTrackIdState.value }
+    }
     private fun selectPlaybackTrack(trackId: String) {
         if (trackId == selectedTrackIdState.value) return
         val wasPlaying = isLoopPlayingState.value
         selectedTrackIdState.value = trackId
         loadedTrackId = null
-        refreshPlaybackLevelsFromSelectedTrack(0)
-
-        if (exoPlayer != null) {
-            loadSelectedTrackIntoPlayer()
-            if (wasPlaying) {
-                val currentTrackVolume = exoPlayer?.volume ?: 1f
-                startLoopPlaybackWithFadeIn(currentTrackVolume)
-                startPlaybackVisualizerSync()
-            }
+        createLoopingPlayerIfNeeded()   // ensure player exists
+        loadSelectedTrackIntoPlayer()
+        if (wasPlaying) {
+            val currentTrackVolume = exoPlayer?.volume ?: 1f
+            startLoopPlaybackWithFadeIn(currentTrackVolume)
         }
     }
 
@@ -477,8 +546,13 @@ class MainActivity : ComponentActivity() {
         createLoopingPlayerIfNeeded()
         if (loadedTrackId == track.id) return
 
+        val mediaItem = when {
+            track.uriString != null -> MediaItem.fromUri(Uri.parse(track.uriString))
+            track.rawResId != 0 -> MediaItem.fromUri("android.resource://$packageName/${track.rawResId}")
+            else -> return
+        }
+
         exoPlayer?.apply {
-            val mediaItem = MediaItem.fromUri("android.resource://$packageName/${track.rawResId}")
             setMediaItem(mediaItem)
             prepare()
             seekToDefaultPosition()
@@ -491,7 +565,7 @@ class MainActivity : ComponentActivity() {
         val trackVolume = exoPlayer?.volume ?: 1f
         startLoopPlaybackWithFadeIn(trackVolume)
         isLoopPlayingState.value = true
-        startPlaybackVisualizerSync()
+        startPlaybackVisualizer()
     }
 
     private fun stopLoopPlayback() {
@@ -501,7 +575,7 @@ class MainActivity : ComponentActivity() {
         exoPlayer?.pause()
         exoPlayer?.seekToDefaultPosition()
         isLoopPlayingState.value = false
-        stopPlaybackVisualizerSync()
+        stopPlaybackVisualizer()
         resetLevelHistory(playbackLevelsState)
         playbackDbfsState.value = VISUALIZER_DB_FLOOR
     }
@@ -546,7 +620,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startPlaybackVisualizerSync() {
+    /*private fun startPlaybackVisualizerSync() {
         stopPlaybackVisualizerSync()
         var lastSyncMs = 0L
         playbackSyncJob = lifecycleScope.launch {
@@ -567,12 +641,12 @@ class MainActivity : ComponentActivity() {
                 awaitFrame()
             }
         }
-    }
+    }*/
 
-    private fun stopPlaybackVisualizerSync() {
+    /*private fun stopPlaybackVisualizerSync() {
         playbackSyncJob?.cancel()
         playbackSyncJob = null
-    }
+    }*/
 
     private fun refreshPlaybackLevelsFromSelectedTrack(startIndex: Int) {
         resetLevelHistory(playbackLevelsState)
@@ -685,7 +759,7 @@ class MainActivity : ComponentActivity() {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun sampleTrackDbfsAtPosition(
+    /*private fun sampleTrackDbfsAtPosition(
         track: PlaybackTrack,
         positionMs: Long,
         durationMs: Long
@@ -699,7 +773,7 @@ class MainActivity : ComponentActivity() {
         val nextIndex = (baseIndex + 1) % levels.size
         val fraction = (positionInBins - baseIndex).toFloat().coerceIn(0f, 1f)
         return lerp(levels[baseIndex], levels[nextIndex], fraction)
-    }
+    }*/
 
     private fun calculateMicrophoneLevel(buffer: ShortArray, samplesRead: Int): Float {
         var sumSquares = 0.0
@@ -751,6 +825,55 @@ class MainActivity : ComponentActivity() {
         return (clampedBaseline + targetIncrease * (1f - duckAmount)).coerceIn(clampedBaseline, 1f)
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun startPlaybackVisualizer() {
+        val player = exoPlayer ?: return
+        val audioSessionId = player.audioSessionId
+        if (audioSessionId == 0) return
+
+        try {
+            visualizer?.release()
+            visualizer = android.media.audiofx.Visualizer(audioSessionId).apply {
+                setCaptureSize(Visualizer.getCaptureSizeRange()[1])
+                setDataCaptureListener(
+                    object : Visualizer.OnDataCaptureListener {
+                        override fun onWaveFormDataCapture(visualizer: Visualizer, waveform: ByteArray, samplingRate: Int) {
+                            var sum = 0.0
+                            for (b in waveform) {
+                                val sample = (b.toInt() and 0xFF) / 128.0 - 1.0
+                                sum += sample * sample
+                            }
+                            val rms = Math.sqrt(sum / waveform.size).toFloat()
+                            val dbfs = linearToDbfs(rms.coerceIn(0f, 1f))
+                            runOnUiThread {
+                                playbackDbfsState.value = dbfs
+                                pushLevel(playbackLevelsState, dbfsToVisualizerLevel(dbfs))
+                            }
+                        }
+
+                        override fun onFftDataCapture(visualizer: Visualizer, fft: ByteArray, samplingRate: Int) {}
+                    },
+                    (1000 / 33).coerceAtMost(Visualizer.getMaxCaptureRate()), // ~30 fps
+                    true,
+                    false
+                )
+                enabled = true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun stopPlaybackVisualizer() {
+        visualizer?.let {
+            try {
+                it.enabled = false
+                it.release()
+            } catch (e: Exception) { }
+            visualizer = null
+        }
+    }
+
     private fun lerp(start: Float, end: Float, fraction: Float): Float {
         return start + (end - start) * fraction
     }
@@ -759,7 +882,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         stopMicrophoneVisualizer()
         playbackFadeInJob?.cancel()
-        stopPlaybackVisualizerSync()
+        stopPlaybackVisualizer()
         exoPlayer?.release()
         exoPlayer = null
         super.onDestroy()
