@@ -19,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -387,10 +386,7 @@ fun MonitorScreen(
                 mode = AmplitudeVisualizerMode.CIRCULAR,
                 barColor = MaterialTheme.colorScheme.primary,
                 secondaryLevels = playbackOverlayLevels,
-                secondaryBarColor = brighterColor(
-                    MaterialTheme.colorScheme.primary,
-                    0.26f
-                ),
+                secondaryBarColor = MaterialTheme.colorScheme.secondary,
                 secondaryAngleOffsetDeg = if (visualizerLevels.isNotEmpty()) {
                     360f / visualizerLevels.size.toFloat() / 2f
                 } else {
@@ -535,19 +531,6 @@ fun MonitorScreen(
             )
         }
     }
-}
-
-private fun brighterColor(color: Color, strength: Float = 0.2f): Color {
-    val safeStrength = strength.coerceIn(0f, 1f)
-    val lighten = { component: Float ->
-        (component + (1f - component) * safeStrength).coerceIn(0f, 1f)
-    }
-    return Color(
-        red = lighten(color.red),
-        green = lighten(color.green),
-        blue = lighten(color.blue),
-        alpha = color.alpha
-    )
 }
 
 private fun dbToVisualizerLevel(dbfs: Float): Float {
