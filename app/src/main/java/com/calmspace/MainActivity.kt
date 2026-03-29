@@ -365,15 +365,13 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onTrackSelected = { trackId ->
                                     selectedMonitorTrackIdState.value = trackId
-                                    val wasLoopPlaying = isLoopPlayingState.value
                                     val isGeneratedNoise = trackId in setOf("white_noise", "pink_noise", "brown_noise", "blue_noise", "grey_noise")
                                     if (isGeneratedNoise) {
                                         stopLoopPlayback()
                                     } else {
-                                        selectedTrackIdState.value = trackId
                                         selectPlaybackTrack(trackId)
 
-                                        if (isMonitoringSessionActiveState.value && wasLoopPlaying) {
+                                        if (isMonitoringSessionActiveState.value && !isLoopPlayingState.value) {
                                             startLoopPlayback()
                                         }
                                     }
@@ -529,7 +527,7 @@ class MainActivity : ComponentActivity() {
         return availablePlaybackTracks.firstOrNull { it.id == selectedTrackIdState.value }
     }
     private fun selectPlaybackTrack(trackId: String) {
-        if (trackId == selectedTrackIdState.value) return
+        if (trackId == selectedTrackIdState.value && loadedTrackId == trackId) return
         val wasPlaying = isLoopPlayingState.value
         selectedTrackIdState.value = trackId
         loadedTrackId = null
@@ -630,14 +628,20 @@ class MainActivity : ComponentActivity() {
                 val player = exoPlayer
                 val track = selectedPlaybackTrack()
                 val nowMs = SystemClock.elapsedRealtime()
-                if (player != null && track != null && player.isPlaying && nowMs - lastSyncMs >= PLAYBACK_VISUALIZER_UPDATE_MS) {
-                    val dbfs = sampleTrackDbfsAtPosition(
-                        track = track,
-                        positionMs = player.currentPosition,
-                        durationMs = player.duration
-                    )
-                    playbackDbfsState.value = dbfs
-                    pushLevel(playbackLevelsState, dbfsToVisualizerLevel(dbfs))
+                if (player != null && track != null && nowMs - lastSyncMs >= PLAYBACK_VISUALIZER_UPDATE_MS) {
+                    if (player.isPlaying) {
+                        val dbfs = sampleTrackDbfsAtPosition(
+                            track = track,
+                            positionMs = player.currentPosition,
+                            durationMs = player.duration
+                        )
+                        val volumeScale = player.volume.coerceIn(0f, 1f)
+                        playbackDbfsState.value = dbfs
+                        pushLevel(playbackLevelsState, dbfsToVisualizerLevel(dbfs) * volumeScale)
+                    } else {
+                        playbackDbfsState.value = VISUALIZER_DB_FLOOR
+                        pushLevel(playbackLevelsState, 0f)
+                    }
                     lastSyncMs = nowMs
                 }
                 awaitFrame()
@@ -887,8 +891,9 @@ class MainActivity : ComponentActivity() {
                             val rms = Math.sqrt(sum / waveform.size).toFloat()
                             val dbfs = linearToDbfs(rms.coerceIn(0f, 1f))
                             runOnUiThread {
+                                val volumeScale = (exoPlayer?.volume ?: 1f).coerceIn(0f, 1f)
                                 playbackDbfsState.value = dbfs
-                                pushLevel(playbackLevelsState, dbfsToVisualizerLevel(dbfs))
+                                pushLevel(playbackLevelsState, dbfsToVisualizerLevel(dbfs) * volumeScale)
                             }
                         }
 
