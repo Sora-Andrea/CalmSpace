@@ -29,7 +29,8 @@ fun AmplitudeVisualizer(
     barColor: Color = MaterialTheme.colorScheme.primary,
     secondaryLevels: List<Float>? = null,
     secondaryBarColor: Color = MaterialTheme.colorScheme.tertiary,
-    secondaryAngleOffsetDeg: Float = 0f
+    secondaryAngleOffsetDeg: Float = 0f,
+    variant: VisualizerVariant = VisualizerVariantConfig.activeVariant
 ) {
     val resolvedModifier = if (mode == AmplitudeVisualizerMode.CIRCULAR) {
         modifier
@@ -104,19 +105,38 @@ fun AmplitudeVisualizer(
                 secondaryLevels?.let { secLevels ->
                     if (secLevels.isEmpty()) return@let
                     val secAngleStep = 360f / secLevels.size
+                    val innerRadiusFloor = min(size.width, size.height) * 0.16f
+                    val inwardTravelLimit = (ringRadius - innerRadiusFloor).coerceAtLeast(barThickness)
                     secLevels.forEachIndexed { index, rawLevel ->
                         val level = rawLevel.coerceIn(0f, 1f)
                         val barLength = minBarLength + (maxBarLength - minBarLength) * level
-                        val angle = startAngle + secondaryAngleOffsetDeg + secAngleStep * index
+                        val angle = when (variant) {
+                            VisualizerVariant.DEFAULT ->
+                                startAngle + secondaryAngleOffsetDeg + secAngleStep * index
+                            VisualizerVariant.ALTERNATIVE ->
+                                startAngle + secAngleStep * index
+                        }
                         val radians = Math.toRadians(angle.toDouble())
                         val start = Offset(
                             centerX + ringRadius * cos(radians).toFloat(),
                             centerY + ringRadius * sin(radians).toFloat()
                         )
-                        val end = Offset(
-                            centerX + (ringRadius + barLength) * cos(radians).toFloat(),
-                            centerY + (ringRadius + barLength) * sin(radians).toFloat()
-                        )
+                        val end = when (variant) {
+                            VisualizerVariant.DEFAULT -> Offset(
+                                centerX + (ringRadius + barLength) * cos(radians).toFloat(),
+                                centerY + (ringRadius + barLength) * sin(radians).toFloat()
+                            )
+                            VisualizerVariant.ALTERNATIVE -> {
+                                // Keep inward style, but avoid hard-clamping too early.
+                                // Early clamp makes bars appear frozen at high levels.
+                                val inwardLength = (barLength * 0.92f).coerceAtMost(inwardTravelLimit)
+                                val innerRadius = ringRadius - inwardLength
+                                Offset(
+                                    centerX + innerRadius * cos(radians).toFloat(),
+                                    centerY + innerRadius * sin(radians).toFloat()
+                                )
+                            }
+                        }
                         drawLine(
                             color = secondaryBarColor.copy(alpha = (0.2f + 0.8f * level).coerceIn(0f, 1f)),
                             start = start,

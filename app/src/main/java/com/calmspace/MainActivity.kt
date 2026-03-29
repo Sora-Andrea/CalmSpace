@@ -135,6 +135,9 @@ class MainActivity : ComponentActivity() {
     private var pendingExoPlayerVolume = 1f
     private var exoPlaybackBaselineVolume = 1f
     private var loadedTrackId: String? = null
+    private var playbackSessionAttachJob: Job? = null
+    private var playbackSessionHealthJob: Job? = null
+    @Volatile private var lastPlaybackSessionCallbackMs: Long = 0L
     private var micAudioRecord: AudioRecord? = null
     private var micCaptureJob: Job? = null
     private var startMicVisualizerAfterPermissionGrant = false
@@ -192,7 +195,7 @@ class MainActivity : ComponentActivity() {
         selectedThemeState.value = runCatching {
             AppTheme.valueOf(prefs.getString("app_theme", AppTheme.DEEP_WATER.name) ?: "")
         }.getOrDefault(AppTheme.DEEP_WATER)
-        val startDestination = Routes.MONITOR
+        val startDestination = Routes.WELCOME
         // Future code for auto logging in users already logged in
         //val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
         //    Routes.HOME  // User already logged in, go directly to home
@@ -853,22 +856,26 @@ class MainActivity : ComponentActivity() {
 
     @androidx.annotation.OptIn(UnstableApi::class)
     private fun startPlaybackSessionVisualizer() {
-        val player = exoPlayer ?: return
-        val audioSessionId = player.audioSessionId
+        playbackSessionAttachJob?.cancel()
+        playbackSessionAttachJob = lifecycleScope.launch {
+            // Imported URI tracks rely on runtime session capture.
+            // Session id can be delayed on some devices, so retry while
+            // track is still imported and playback is active.
+            while (isActive) {
+                val player = exoPlayer ?: return@launch
+                if (!player.isPlaying || !isImportedTrack(selectedPlaybackTrack())) return@launch
 
-        // Imported URI tracks do not have precomputed envelopes, so we prefer
-        // runtime capture. If session id is not ready yet, retry once shortly.
-        if (audioSessionId == 0) {
-            lifecycleScope.launch {
-                delay(120)
-                val retrySessionId = exoPlayer?.audioSessionId ?: 0
-                if (retrySessionId != 0) {
-                    attachPlaybackSessionVisualizer(retrySessionId)
+                val audioSessionId = player.audioSessionId
+                if (audioSessionId != 0) {
+                    attachPlaybackSessionVisualizer(audioSessionId)
+                    if (playbackSessionVisualizer != null) {
+                        startPlaybackSessionHealthWatch()
+                        return@launch
+                    }
                 }
+                delay(120)
             }
-            return
         }
-        attachPlaybackSessionVisualizer(audioSessionId)
     }
 
     private fun attachPlaybackSessionVisualizer(audioSessionId: Int) {
@@ -890,6 +897,7 @@ class MainActivity : ComponentActivity() {
                             }
                             val rms = Math.sqrt(sum / waveform.size).toFloat()
                             val dbfs = linearToDbfs(rms.coerceIn(0f, 1f))
+                            lastPlaybackSessionCallbackMs = SystemClock.elapsedRealtime()
                             runOnUiThread {
                                 val volumeScale = (exoPlayer?.volume ?: 1f).coerceIn(0f, 1f)
                                 playbackDbfsState.value = dbfs
@@ -914,7 +922,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startPlaybackSessionHealthWatch() {
+        playbackSessionHealthJob?.cancel()
+        lastPlaybackSessionCallbackMs = SystemClock.elapsedRealtime()
+        playbackSessionHealthJob = lifecycleScope.launch {
+            while (isActive) {
+                delay(600)
+                val player = exoPlayer ?: return@launch
+                if (!player.isPlaying || !isImportedTrack(selectedPlaybackTrack())) return@launch
+
+                val noCallbackForMs = SystemClock.elapsedRealtime() - lastPlaybackSessionCallbackMs
+                if (noCallbackForMs > 1600L) {
+                    // Recreate capture when callbacks stall on route/session changes.
+                    stopPlaybackSessionVisualizer()
+                    startPlaybackSessionVisualizer()
+                    return@launch
+                }
+            }
+        }
+    }
+
     private fun stopPlaybackSessionVisualizer() {
+        playbackSessionAttachJob?.cancel()
+        playbackSessionAttachJob = null
+        playbackSessionHealthJob?.cancel()
+        playbackSessionHealthJob = null
         playbackSessionVisualizer?.let {
             try {
                 it.enabled = false
@@ -923,6 +955,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         playbackSessionVisualizer = null
+        lastPlaybackSessionCallbackMs = 0L
     }
 
     private fun lerp(start: Float, end: Float, fraction: Float): Float {
