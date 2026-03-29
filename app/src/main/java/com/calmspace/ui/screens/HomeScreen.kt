@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import com.calmspace.ui.theme.MoonGold
 import androidx.compose.ui.unit.dp
@@ -36,11 +37,13 @@ fun HomeScreen(
     // TODO: Replace with ViewModel + Room database
     // ─────────────────────────────────────────────
 
-    // TODO: Derive greeting from system time
-    val greeting = "Good Evening"
+    val context  = LocalContext.current
+    var username by remember { mutableStateOf("") }
 
-    // TODO: Replace with real user profile from database
-    val username = "User"
+    LaunchedEffect(Unit) {
+        username = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("user_name", "") ?: ""
+    }
 
     // TODO: Replace with real sleep quality score from last session
     val sleepQualityMessage = "Your sleep quality is improving! 📈"
@@ -90,13 +93,13 @@ fun HomeScreen(
         ) {
             Column {
                 Text(
-                    text = "Welcome back, $username",
+                    text  = "Welcome back",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                 )
                 Text(
-                    text = greeting,
-                    style = MaterialTheme.typography.headlineMedium,
+                    text       = if (username.isNotBlank()) username else "CalmSpace",
+                    style      = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold
                 )
             }

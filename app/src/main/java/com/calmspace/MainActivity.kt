@@ -77,7 +77,8 @@ object Routes {
     const val WELCOME = "welcome"
     const val LOGIN = "login"
     const val SIGNUP = "signup"
-    const val QUESTIONNAIRE = "questionnaire"
+    const val QUESTIONNAIRE      = "questionnaire"
+    const val QUESTIONNAIRE_EDIT = "questionnaire_edit"
     const val HOME = "home"
     const val MONITOR = "monitor"
     const val PROFILE = "profile"
@@ -195,13 +196,7 @@ class MainActivity : ComponentActivity() {
         selectedThemeState.value = runCatching {
             AppTheme.valueOf(prefs.getString("app_theme", AppTheme.DEEP_WATER.name) ?: "")
         }.getOrDefault(AppTheme.DEEP_WATER)
-        val startDestination = Routes.WELCOME
-        // Future code for auto logging in users already logged in
-        //val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
-        //    Routes.HOME  // User already logged in, go directly to home
-        //} else {
-        //    Routes.WELCOME
-        //}
+        val startDestination = if (prefs.getBoolean("logged_in", false)) Routes.HOME else Routes.WELCOME
         hasMicPermissionState.value = hasRecordAudioPermission()
         userTracksManager = UserTracksManager(this)
         val savedUris = userTracksManager.getSavedUris()
@@ -427,7 +422,17 @@ class MainActivity : ComponentActivity() {
 
                         // ───────── Profile Screen ─────────
                         composable(Routes.PROFILE) {
-                            ProfileScreen()
+                            ProfileScreen(
+                                onEditQuestionnaire  = { navController.navigate(Routes.QUESTIONNAIRE_EDIT) },
+                                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
+                            )
+                        }
+
+                        composable(Routes.QUESTIONNAIRE_EDIT) {
+                            com.calmspace.ui.onboarding.QuestionnaireScreen(
+                                onFinish  = { navController.popBackStack() },
+                                isEditing = true
+                            )
                         }
 
                         // ───────── Settings Screen ─────────
@@ -438,6 +443,14 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigateToMediaPlayer = {
                                     navController.navigate(Routes.MEDIA_PLAYER)
+                                },
+                                onNavigateToProfile = {
+                                    navController.navigate(Routes.PROFILE)
+                                },
+                                onLogOut = {
+                                    navController.navigate(Routes.WELCOME) {
+                                        popUpTo(0) { inclusive = true }
+                                    }
                                 },
                                 currentTheme = selectedThemeState.value,
                                 onThemeSelected = { theme ->
