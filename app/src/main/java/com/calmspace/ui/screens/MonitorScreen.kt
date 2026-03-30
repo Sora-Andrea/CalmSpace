@@ -349,7 +349,7 @@ fun MonitorScreen(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(top = 24.dp),
+                .padding(top = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
@@ -370,7 +370,7 @@ fun MonitorScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         // ───────── Decorative Rings ─────────
         Box(
             modifier = Modifier.size(220.dp),
@@ -467,15 +467,16 @@ fun MonitorScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Import Audio button
-            Button(
-                onClick = onImportAudio,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Import Audio")
-            }
-            Spacer(modifier = Modifier.height(16.dp)) // optional spacing
+        }
+
+        Button(
+            onClick = onImportAudio,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Import Audio")
         }
 
         // ───────── Start/Stop Session Button — always visible ─────────
