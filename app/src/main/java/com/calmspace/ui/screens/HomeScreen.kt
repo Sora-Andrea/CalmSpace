@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import com.calmspace.ui.theme.MoonGold
+import com.calmspace.ui.screens.monitor.MonitorStarfield
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -46,7 +47,7 @@ fun HomeScreen(
     }
 
     // TODO: Replace with real sleep quality score from last session
-    val sleepQualityMessage = "Your sleep quality is improving! 📈"
+    val sleepQualityMessage = "Your sleep quality is improving!"
 
     // TODO: Replace with last night's session data from Room
     val lastNightHours = "7h 45m"
@@ -57,13 +58,13 @@ fun HomeScreen(
     // Values represent relative sleep duration per day (0.0 - 1.0) for bar chart
     // Order: Mon, Tue, Wed, Thu, Fri, Sat, Sun
     val weeklyData = listOf(
-        Pair("M", 0.6f),
-        Pair("T", 0.8f),
-        Pair("W", 0.5f),
-        Pair("T", 0.9f),
-        Pair("F", 0.4f),
-        Pair("S", 0.7f),
-        Pair("S", 0.85f)
+        Pair("Mo", 0.6f),
+        Pair("Tu", 0.8f),
+        Pair("We", 0.5f),
+        Pair("Th", 0.9f),
+        Pair("Fr", 0.4f),
+        Pair("Sa", 0.7f),
+        Pair("Su", 0.85f)
     )
 
     // TODO: Replace with actual weekly average from Room
@@ -78,6 +79,9 @@ fun HomeScreen(
     // ─────────────────────────────────────────────
     // Layout
     // ─────────────────────────────────────────────
+    Box(modifier = Modifier.fillMaxSize()) {
+        MonitorStarfield(modifier = Modifier.fillMaxSize())
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -261,6 +265,7 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
     }
+    } // end Box
 }
 
 // ─────────────────────────────────────────────

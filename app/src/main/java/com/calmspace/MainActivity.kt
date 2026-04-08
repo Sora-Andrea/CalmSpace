@@ -65,6 +65,9 @@ import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_DUCKING_FACTOR
 import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MAX
 import com.calmspace.service.AudioTimingConfig.MASKING_AUTOMATION_REFERENCE_DB_MIN
 import com.calmspace.ui.player.UserTracksManager
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -237,7 +240,11 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = startDestination,
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        enterTransition    = { fadeIn(animationSpec = tween(220)) },
+                        exitTransition     = { fadeOut(animationSpec = tween(180)) },
+                        popEnterTransition = { fadeIn(animationSpec = tween(220)) },
+                        popExitTransition  = { fadeOut(animationSpec = tween(180)) }
                     ) {
 
                         // ───────── Welcome Screen ─────────
