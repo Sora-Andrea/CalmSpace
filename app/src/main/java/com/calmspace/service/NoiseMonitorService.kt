@@ -127,6 +127,12 @@ class NoiseMonitorService : Service() {
     private val _isPlaying     = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    private val _sessionElapsedMs = MutableStateFlow(0L)
+    val sessionElapsedMs: StateFlow<Long> = _sessionElapsedMs.asStateFlow()
+
+    private val _sessionStartedAtUtcMs = MutableStateFlow<Long?>(null)
+    val sessionStartedAtUtcMs: StateFlow<Long?> = _sessionStartedAtUtcMs.asStateFlow()
+
     private val _startingVolume = MutableStateFlow(0.5f)
     val startingVolume: StateFlow<Float> = _startingVolume.asStateFlow()
 
@@ -168,6 +174,8 @@ class NoiseMonitorService : Service() {
     )
 
     private var running = false
+    private var sessionStartElapsedRealtimeMs: Long? = null
+    private var hasActiveSessionLog = false
 
     // Noise playback
     private var audioTrack: AudioTrack? = null
@@ -419,6 +427,18 @@ class NoiseMonitorService : Service() {
         _isRecording.value = true
         _soundEvents.value = emptyList()
         val now = System.currentTimeMillis()
+        val startElapsedRealtimeMs = SystemClock.elapsedRealtime()
+        sessionStartElapsedRealtimeMs = startElapsedRealtimeMs
+        _sessionStartedAtUtcMs.value = now
+        _sessionElapsedMs.value = 0L
+        SleepSessionLogStore.markSessionStarted(
+            context = applicationContext,
+            userId = "local",
+            trackId = _selectedSound.value.name,
+            startUtcMs = now,
+            startElapsedMs = startElapsedRealtimeMs
+        )
+        hasActiveSessionLog = true
 
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CalmSpace::NoiseMonitor")
@@ -623,6 +643,10 @@ class NoiseMonitorService : Service() {
 
                         // Sound event detection
                         val now = System.currentTimeMillis()
+                        sessionStartElapsedRealtimeMs?.let { sessionStart ->
+                            _sessionElapsedMs.value =
+                                (SystemClock.elapsedRealtime() - sessionStart).coerceAtLeast(0L)
+                        }
                         if (latestDb >= eventThreshold) {
                             if (!inEvent) {
                                 inEvent = true
@@ -677,6 +701,18 @@ class NoiseMonitorService : Service() {
                 wakeLock?.release()
                 wakeLock = null
                 _isRecording.value = false
+                sessionStartElapsedRealtimeMs = null
+                _sessionStartedAtUtcMs.value = null
+                _sessionElapsedMs.value = 0L
+                if (hasActiveSessionLog) {
+                    SleepSessionLogStore.markSessionEnded(
+                        context = applicationContext,
+                        endUtcMs = System.currentTimeMillis(),
+                        endElapsedMs = SystemClock.elapsedRealtime(),
+                        endReason = "service_stop"
+                    )
+                    hasActiveSessionLog = false
+                }
                 _statusMessage.value = if (_soundEvents.value.isEmpty())
                     "Stopped — no sounds detected"
                 else
@@ -691,6 +727,20 @@ class NoiseMonitorService : Service() {
         stopWhiteNoise()
         _automatedDecisionReason.value = "Session ended"
         _automatedTargetVolume.value = _startingVolume.value
+        if (hasActiveSessionLog) {
+            SleepSessionLogStore.markSessionEnded(
+                context = applicationContext,
+                endUtcMs = System.currentTimeMillis(),
+                endElapsedMs = SystemClock.elapsedRealtime(),
+                endReason = "user_stop"
+            )
+            hasActiveSessionLog = false
+        } else {
+            SleepSessionLogStore.clearActiveSession(applicationContext)
+        }
+        sessionStartElapsedRealtimeMs = null
+        _sessionStartedAtUtcMs.value = null
+        _sessionElapsedMs.value = 0L
         stopMaskingInferenceWorker()
         stopMaskingClassifier()
         // Do not call recorder?.stop() here — the recording thread's finally block
