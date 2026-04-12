@@ -420,9 +420,6 @@ class MainActivity : ComponentActivity() {
                                     stopLoopPlayback()
                                     resetLevelHistory(micLevelsState)
                                     micDbfsState.value = VISUALIZER_DB_FLOOR
-                                    navController.navigate(Routes.HOME) {
-                                        popUpTo(Routes.MONITOR) { inclusive = true }
-                                    }
                                 },
                                 onImportAudio = { audioFilePickerLauncher.launch(arrayOf("audio/*")) }
                             )

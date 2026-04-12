@@ -201,6 +201,8 @@ fun AudioPlayerCard(
     var trackMenuExpanded by remember { mutableStateOf(false) }
     val selectedTrackTitle = trackOptions.firstOrNull { it.id == selectedTrackId }?.title
         ?: "White Noise"
+    val sliderMax = if (isHeadphonesConnected) 1.0f else 0.6f
+    val sliderValue = volume.coerceIn(0.1f, sliderMax)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -256,9 +258,9 @@ fun AudioPlayerCard(
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                     Slider(
-                        value = volume,
+                        value = sliderValue,
                         onValueChange = onVolumeChange,
-                        valueRange = 0.1f..if (isHeadphonesConnected) 1.0f else 0.6f,
+                        valueRange = 0.1f..sliderMax,
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 8.dp)

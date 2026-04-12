@@ -102,7 +102,11 @@ fun MonitorScreen(
         )
         onDispose {
             if (isServiceBound) {
-                context.unbindService(connection)
+                try {
+                    context.unbindService(connection)
+                } catch (_: IllegalArgumentException) {
+                    // Defensive: connection may already be unbound during fast nav changes.
+                }
             }
             service = null
             isServiceBound = false
@@ -117,6 +121,7 @@ fun MonitorScreen(
     var soundEvents    by remember { mutableStateOf(emptyList<SoundEvent>()) }
     var statusMessage  by remember { mutableStateOf("Ready") }
     var isRecording    by remember { mutableStateOf(false) }
+    var sessionElapsedMs by remember { mutableStateOf(0L) }
     var currentBucket  by remember { mutableStateOf("") }
     var topPrediction  by remember { mutableStateOf("") }
     var isWhiteNoisePlaying by remember { mutableStateOf(false) }
@@ -136,6 +141,13 @@ fun MonitorScreen(
 
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
+        // Seed UI state immediately on re-entry to avoid one-frame stale defaults.
+        isRecording = svc.isRecording.value
+        isWhiteNoisePlaying = svc.isPlaying.value
+        startingVolume = svc.startingVolume.value
+        selectedSound = svc.selectedSound.value
+        sessionElapsedMs = svc.sessionElapsedMs.value
+
         launch {
             var lastVizUpdateMs = 0L
             svc.currentDb.collect { db ->
@@ -153,6 +165,7 @@ fun MonitorScreen(
         launch { svc.soundEvents.collect    { soundEvents    = it } }
         launch { svc.statusMessage.collect  { statusMessage  = it } }
         launch { svc.isRecording.collect    { isRecording    = it } }
+        launch { svc.sessionElapsedMs.collect { sessionElapsedMs = it } }
         launch { svc.currentMaskingBucket.collect { currentBucket = it } }
         launch { svc.currentTopPrediction.collect { topPrediction = it } }
         launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
@@ -185,8 +198,9 @@ fun MonitorScreen(
 
     LaunchedEffect(service, isRecording) {
         val svc = service ?: return@LaunchedEffect
-        svc.setMaskingAutomationEnabled(isRecording)
-        svc.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
+        val recordingActive = isRecording || svc.isRecording.value
+        svc.setMaskingAutomationEnabled(recordingActive)
+        svc.setGeneratedNoisePlaybackEnabled(recordingActive && isServiceTrack(selectedTrackId))
     }
 
     LaunchedEffect(isRecording) {
@@ -205,10 +219,11 @@ fun MonitorScreen(
         isRecording,
         service
     ) {
-        service?.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
-        if (!isRecording) return@LaunchedEffect
-
         val svc = service ?: return@LaunchedEffect
+        val recordingActive = isRecording || svc.isRecording.value
+        svc.setGeneratedNoisePlaybackEnabled(recordingActive && isServiceTrack(selectedTrackId))
+        if (!recordingActive) return@LaunchedEffect
+
         if (isServiceTrack(selectedTrackId)) {
             if (!isWhiteNoisePlaying) svc.startWhiteNoise()
         } else if (!isTrackPlaybackPlaying) {
@@ -334,8 +349,7 @@ fun MonitorScreen(
         null
     }
 
-    // TODO: Track actual session start time and calculate elapsed
-    val sleepTime = if (isRecording) "0:00" else "8:42"
+    val sleepTime = formatSessionElapsed(sessionElapsedMs)
 
     // ─────────────────────────────────────────────────────────────────
     // UI
@@ -550,4 +564,11 @@ private fun resetLevels(levels: MutableList<Float>) {
     for (index in levels.indices) {
         levels[index] = 0f
     }
+}
+
+private fun formatSessionElapsed(elapsedMs: Long): String {
+    val totalSeconds = (elapsedMs / 1000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return String.format("%d:%02d", minutes, seconds)
 }
