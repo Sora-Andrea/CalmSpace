@@ -29,6 +29,7 @@ import com.calmspace.ui.onboarding.PREF_Q_HEALTH_FACTORS
 import com.calmspace.ui.onboarding.PREF_Q_SLEEP_ENVIRONMENT
 import com.calmspace.ui.onboarding.PREF_Q_SLEEP_HABITS
 import com.calmspace.ui.onboarding.PREF_Q_SLEEP_SCHEDULE
+import com.calmspace.ui.screens.monitor.MonitorStarfield
 
 // ─────────────────────────────────────────────
 // Profile Screen
@@ -90,6 +91,9 @@ fun ProfileScreen(
     val avgQuality    = "87%"
     val weeklyData    = listOf(0.6f, 0.8f, 0.5f, 0.9f, 0.4f, 0.7f, 0.85f)
 
+    Box(modifier = Modifier.fillMaxSize()) {
+        MonitorStarfield(modifier = Modifier.fillMaxSize())
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -130,11 +134,6 @@ fun ProfileScreen(
             text = userName.ifBlank { "Sleep User" },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "Member since Jan 2025",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -273,6 +272,7 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
     }
+    } // end Box
 }
 
 // ─────────────────────────────────────────────
@@ -339,7 +339,7 @@ fun QuestionnaireItem(name: String, isCompleted: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun WeeklyBarChart(values: List<Float>) {
-    val labels       = listOf("M", "T", "W", "T", "F", "S", "S")
+    val labels       = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
     val primaryColor = MaterialTheme.colorScheme.primary
     val dimColor     = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val maxIndex     = values.indexOf(values.maxOrNull() ?: 0f)

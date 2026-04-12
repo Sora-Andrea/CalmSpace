@@ -75,9 +75,8 @@ fun RecordingStatusPill(isRecording: Boolean, isHeadphonesConnected: Boolean = f
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = if (isRecording) "Active\nRecording" else "Not\nActive",
-            style = MaterialTheme.typography.labelSmall,
-            lineHeight = 14.sp
+            text = if (isRecording) "Recording" else "Inactive",
+            style = MaterialTheme.typography.labelSmall
         )
         if (isHeadphonesConnected) {
             Spacer(modifier = Modifier.width(6.dp))
@@ -104,15 +103,6 @@ fun MonitorRingsDisplay(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(200.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(200.dp)
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
-                    shape = CircleShape
-                )
-        )
         Box(
             modifier = Modifier
                 .size(150.dp)
@@ -205,7 +195,8 @@ fun AudioPlayerCard(
     onTogglePlayback: () -> Unit,
     onVolumeChange: (Float) -> Unit,
     onChangeSoundClick: () -> Unit = {},
-    isSessionActive: Boolean = false
+    isSessionActive: Boolean = false,
+    isHeadphonesConnected: Boolean = false
 ) {
     var trackMenuExpanded by remember { mutableStateOf(false) }
     val selectedTrackTitle = trackOptions.firstOrNull { it.id == selectedTrackId }?.title
@@ -215,112 +206,73 @@ fun AudioPlayerCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
 
-            // ── Sound title + change button ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // ── Sound selector ──
+            ExposedDropdownMenuBox(
+                expanded = trackMenuExpanded,
+                onExpandedChange = { trackMenuExpanded = !trackMenuExpanded }
             ) {
-//                Column(
-//                    modifier = Modifier.weight(1f)
-//                ) {
-//                    Text(
-//                        text = "Ambient Sounds",
-//                        style = MaterialTheme.typography.bodySmall,
-//                        color = Color.Gray
-//                    )
-//
-//                    Text(
-//                        text = selectedTrackTitle,
-//                        style = MaterialTheme.typography.bodyLarge,
-//                        fontWeight = FontWeight.Bold
-//                    )
-//
-//                    // TODO: Show headphone warning when connected
-//                    // if (isHeadphonesConnected) {
-//                    //     Text(
-//                    //         text = "Volume capped for safety",
-//                    //         style = MaterialTheme.typography.labelSmall,
-//                    //         color = MaterialTheme.colorScheme.error
-//                    //     )
-//                    // }
-//                }
+                OutlinedTextField(
+                    value = selectedTrackTitle,
+                    onValueChange = {},
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    readOnly = true,
+                    label = { Text("Ambient Sound") },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = trackMenuExpanded)
+                    }
+                )
 
-                ExposedDropdownMenuBox(
-                    modifier = Modifier.weight(1f),
+                DropdownMenu(
                     expanded = trackMenuExpanded,
-                    onExpandedChange = { trackMenuExpanded = !trackMenuExpanded }
+                    onDismissRequest = { trackMenuExpanded = false }
                 ) {
-                    OutlinedTextField(
-                        value = selectedTrackTitle,
-                        onValueChange = {},
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        readOnly = true,
-                        label = { Text("Ambient Sounds") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = trackMenuExpanded)
-                        }
-                    )
-
-                    DropdownMenu(
-                        expanded = trackMenuExpanded,
-                        onDismissRequest = { trackMenuExpanded = false }
-                    ) {
-                        trackOptions.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.title) },
-                                onClick = {
-                                    trackMenuExpanded = false
-                                    onTrackSelected(option.id)
-                                }
-                            )
-                        }
+                    trackOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.title) },
+                            onClick = {
+                                trackMenuExpanded = false
+                                onTrackSelected(option.id)
+                            }
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // ── Volume slider — hidden during active session (masking auto-controls volume) ──
+            // ── Volume slider — hidden during active session ──
             if (!isSessionActive) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.VolumeDown,
-                        contentDescription = "Volume down",
+                        contentDescription = null,
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                     Slider(
                         value = volume,
                         onValueChange = onVolumeChange,
-                        valueRange = 0.1f..1.0f,
+                        valueRange = 0.1f..if (isHeadphonesConnected) 1.0f else 0.6f,
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 8.dp)
                     )
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = "Volume up",
+                        contentDescription = null,
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                 }
-
-                Text(
-                    text = "${(volume * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // ── Play / Pause ──
             Row(
@@ -329,17 +281,15 @@ fun AudioPlayerCard(
             ) {
                 FilledIconButton(
                     onClick = onTogglePlayback,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 }

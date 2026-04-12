@@ -178,7 +178,7 @@ fun QuestionnaireScreen(
                             color = if (pagerState.currentPage == index)
                                 MaterialTheme.colorScheme.primary
                             else
-                                Color.LightGray,
+                                MaterialTheme.colorScheme.outlineVariant,
                             shape = CircleShape
                         )
                 )
