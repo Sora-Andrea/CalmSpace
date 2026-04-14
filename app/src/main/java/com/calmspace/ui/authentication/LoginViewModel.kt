@@ -21,23 +21,8 @@ class LoginViewModel : ViewModel() {
     val loginState = _loginState
 
     fun login(email: String, password: String) {
-        viewModelScope.launch {
-            _loginState.value = LoginState.Loading
-            try {
-                val result = auth.signInWithEmailAndPassword(email, password).await()
-                val user = result.user
-                _loginState.value = LoginState.Success(user?.uid ?: "")
-            } catch (e: Exception) {
-                val errorMessage = when (e) {
-                    is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException ->
-                        "Invalid email or password."
-                    is com.google.firebase.auth.FirebaseAuthInvalidUserException ->
-                        "No account found with this email."
-                    else -> "Login failed: ${e.message}"
-                }
-                _loginState.value = LoginState.Error(errorMessage)
-            }
-        }
+        // TODO: re-enable Firebase auth when backend is ready
+        _loginState.value = LoginState.Success("dev_user")
     }
 
     fun resetState() {

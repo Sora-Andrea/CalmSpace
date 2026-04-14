@@ -11,15 +11,14 @@ import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -31,7 +30,9 @@ import com.calmspace.ui.player.AmplitudeVisualizerMode
 import com.calmspace.ui.player.PlaybackTrackOption
 import com.calmspace.ui.screens.monitor.AudioPlayerCard
 import com.calmspace.ui.screens.monitor.MonitorRingsDisplay
+import com.calmspace.ui.screens.monitor.MonitorStarfield
 import com.calmspace.ui.screens.monitor.RecordingStatusPill
+import com.calmspace.ui.screens.monitor.ShootingStarRing
 import com.calmspace.ui.screens.monitor.SoundPickerSheet
 import kotlinx.coroutines.launch
 
@@ -74,6 +75,7 @@ fun MonitorScreen(
     onImportAudio: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
 
     // ─────────────────────────────────────────────────────────────────
     // Service binding
@@ -100,7 +102,11 @@ fun MonitorScreen(
         )
         onDispose {
             if (isServiceBound) {
-                context.unbindService(connection)
+                try {
+                    context.unbindService(connection)
+                } catch (_: IllegalArgumentException) {
+                    // Defensive: connection may already be unbound during fast nav changes.
+                }
             }
             service = null
             isServiceBound = false
@@ -115,6 +121,7 @@ fun MonitorScreen(
     var soundEvents    by remember { mutableStateOf(emptyList<SoundEvent>()) }
     var statusMessage  by remember { mutableStateOf("Ready") }
     var isRecording    by remember { mutableStateOf(false) }
+    var sessionElapsedMs by remember { mutableStateOf(0L) }
     var currentBucket  by remember { mutableStateOf("") }
     var topPrediction  by remember { mutableStateOf("") }
     var isWhiteNoisePlaying by remember { mutableStateOf(false) }
@@ -134,6 +141,13 @@ fun MonitorScreen(
 
     LaunchedEffect(service) {
         val svc = service ?: return@LaunchedEffect
+        // Seed UI state immediately on re-entry to avoid one-frame stale defaults.
+        isRecording = svc.isRecording.value
+        isWhiteNoisePlaying = svc.isPlaying.value
+        startingVolume = svc.startingVolume.value
+        selectedSound = svc.selectedSound.value
+        sessionElapsedMs = svc.sessionElapsedMs.value
+
         launch {
             var lastVizUpdateMs = 0L
             svc.currentDb.collect { db ->
@@ -151,6 +165,7 @@ fun MonitorScreen(
         launch { svc.soundEvents.collect    { soundEvents    = it } }
         launch { svc.statusMessage.collect  { statusMessage  = it } }
         launch { svc.isRecording.collect    { isRecording    = it } }
+        launch { svc.sessionElapsedMs.collect { sessionElapsedMs = it } }
         launch { svc.currentMaskingBucket.collect { currentBucket = it } }
         launch { svc.currentTopPrediction.collect { topPrediction = it } }
         launch { svc.isPlaying.collect      { isWhiteNoisePlaying      = it } }
@@ -183,8 +198,9 @@ fun MonitorScreen(
 
     LaunchedEffect(service, isRecording) {
         val svc = service ?: return@LaunchedEffect
-        svc.setMaskingAutomationEnabled(isRecording)
-        svc.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
+        val recordingActive = isRecording || svc.isRecording.value
+        svc.setMaskingAutomationEnabled(recordingActive)
+        svc.setGeneratedNoisePlaybackEnabled(recordingActive && isServiceTrack(selectedTrackId))
     }
 
     LaunchedEffect(isRecording) {
@@ -203,10 +219,11 @@ fun MonitorScreen(
         isRecording,
         service
     ) {
-        service?.setGeneratedNoisePlaybackEnabled(isRecording && isServiceTrack(selectedTrackId))
-        if (!isRecording) return@LaunchedEffect
-
         val svc = service ?: return@LaunchedEffect
+        val recordingActive = isRecording || svc.isRecording.value
+        svc.setGeneratedNoisePlaybackEnabled(recordingActive && isServiceTrack(selectedTrackId))
+        if (!recordingActive) return@LaunchedEffect
+
         if (isServiceTrack(selectedTrackId)) {
             if (!isWhiteNoisePlaying) svc.startWhiteNoise()
         } else if (!isTrackPlaybackPlaying) {
@@ -332,51 +349,50 @@ fun MonitorScreen(
         null
     }
 
-    // TODO: Track actual session start time and calculate elapsed
-    val sleepTime = if (isRecording) "0:00" else "8:42"
+    val sleepTime = formatSessionElapsed(sessionElapsedMs)
 
     // ─────────────────────────────────────────────────────────────────
     // UI
     // ─────────────────────────────────────────────────────────────────
 
+    val generatedNoiseIds = setOf("white_noise", "pink_noise", "brown_noise", "blue_noise", "grey_noise")
+    val isGeneratedNoise = selectedTrackId in generatedNoiseIds
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        MonitorStarfield(modifier = Modifier.fillMaxSize())
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
-        // ───────── Scrollable content ─────────
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(top = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        // ───────── Header ─────────
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                text = "CalmSpace",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            RecordingStatusPill(
+                isRecording = isRecording,
+                isHeadphonesConnected = isHeadphonesConnected
+            )
+        }
 
-            // ───────── Header ─────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "CalmSpace",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                RecordingStatusPill(
-                    isRecording = isRecording,
-                    isHeadphonesConnected = isHeadphonesConnected
-                )
-            }
+        Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(32.dp))
-        // ───────── Decorative Rings ─────────
+        // ───────── Visualizer + Rings ─────────
         Box(
-            modifier = Modifier.size(220.dp),
+            modifier = Modifier.size(200.dp),
             contentAlignment = Alignment.Center
         ) {
+            ShootingStarRing(modifier = Modifier.matchParentSize())
             MonitorRingsDisplay(
                 isRecording = isRecording,
                 amplitude = visualizerLevels.lastOrNull() ?: 0f
@@ -387,106 +403,94 @@ fun MonitorScreen(
                 mode = AmplitudeVisualizerMode.CIRCULAR,
                 barColor = MaterialTheme.colorScheme.primary,
                 secondaryLevels = playbackOverlayLevels,
-                secondaryBarColor = brighterColor(
-                    MaterialTheme.colorScheme.primary,
-                    0.26f
-                ),
+                secondaryBarColor = MaterialTheme.colorScheme.secondary,
                 secondaryAngleOffsetDeg = if (visualizerLevels.isNotEmpty()) {
                     360f / visualizerLevels.size.toFloat() / 2f
-                } else {
-                    0f
-                }
+                } else 0f
             )
         }
 
-            // ───────── Sleep Time Display ─────────
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ───────── Sleep Time + Status ─────────
+        Text(
+            text = sleepTime,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Sleep Time",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = displayLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+        )
+        if (isRecording) {
             Text(
-                text = sleepTime,
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Sleep Time",
-                style = MaterialTheme.typography.bodyMedium,
-                color = androidx.compose.ui.graphics.Color.Gray
-            )
-            Text(
-                text = displayLine,
+                text = statusMessage,
                 style = MaterialTheme.typography.bodySmall,
-                color = androidx.compose.ui.graphics.Color.Gray
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
             )
-            if (isRecording) {
-                Text(
-                    text = statusMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = androidx.compose.ui.graphics.Color.Gray
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // ───────── Audio Player Card ─────────
-            val generatedNoiseIds = setOf("white_noise", "pink_noise", "brown_noise", "blue_noise", "grey_noise")
-            val isGeneratedNoise = selectedTrackId in generatedNoiseIds
-
-            AudioPlayerCard(
-                trackOptions = trackOptions,
-                selectedTrackId = selectedTrackId,
-                isPlaying = if (isGeneratedNoise) isWhiteNoisePlaying else isTrackPlaybackPlaying,
-                volume = startingVolume,
-                onTrackSelected = { trackId ->
-                    // Switching away from a generated noise to a file track — stop the noise thread
-                    if (isGeneratedNoise && trackId !in generatedNoiseIds) {
-                        service?.stopWhiteNoise()
-                    }
-                    // Switching to a generated noise — update the sound type
-                    if (trackId in generatedNoiseIds) {
-                        service?.setSoundType(when (trackId) {
-                            "pink_noise"  -> SoundType.PINK_NOISE
-                            "brown_noise" -> SoundType.BROWN_NOISE
-                            "blue_noise"  -> SoundType.BLUE_NOISE
-                            "grey_noise"  -> SoundType.GREY_NOISE
-                            else          -> SoundType.WHITE_NOISE
-                        })
-                    }
-                    onTrackSelected(trackId)
-                },
-                onTogglePlayback = {
-                    if (isGeneratedNoise) {
-                        if (isWhiteNoisePlaying) service?.stopWhiteNoise()
-                        else service?.startWhiteNoise()
-                    } else {
-                        onToggleTrackPlayback()
-                    }
-                },
-                onVolumeChange = { volume ->
-                    service?.setStartingVolume(volume)
-                    if (!isGeneratedNoise) {
-                        onTrackVolumeChange(volume)
-                    }
-                },
-                onChangeSoundClick = { showSoundPicker = true },
-                isSessionActive = isRecording
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Import Audio button
-            Button(
-                onClick = onImportAudio,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Import Audio")
-            }
-            Spacer(modifier = Modifier.height(16.dp)) // optional spacing
         }
 
-        // ───────── Start/Stop Session Button — always visible ─────────
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ───────── Audio Player Card ─────────
+        AudioPlayerCard(
+            trackOptions = trackOptions,
+            selectedTrackId = selectedTrackId,
+            isPlaying = if (isGeneratedNoise) isWhiteNoisePlaying else isTrackPlaybackPlaying,
+            volume = startingVolume,
+            onTrackSelected = { trackId ->
+                if (isGeneratedNoise && trackId !in generatedNoiseIds) service?.stopWhiteNoise()
+                if (trackId in generatedNoiseIds) {
+                    service?.setSoundType(when (trackId) {
+                        "pink_noise"  -> SoundType.PINK_NOISE
+                        "brown_noise" -> SoundType.BROWN_NOISE
+                        "blue_noise"  -> SoundType.BLUE_NOISE
+                        "grey_noise"  -> SoundType.GREY_NOISE
+                        else          -> SoundType.WHITE_NOISE
+                    })
+                }
+                onTrackSelected(trackId)
+            },
+            onTogglePlayback = {
+                if (isGeneratedNoise) {
+                    if (isWhiteNoisePlaying) service?.stopWhiteNoise() else service?.startWhiteNoise()
+                } else {
+                    onToggleTrackPlayback()
+                }
+            },
+            onVolumeChange = { volume ->
+                service?.setStartingVolume(volume)
+                if (!isGeneratedNoise) onTrackVolumeChange(volume)
+            },
+            onChangeSoundClick = { showSoundPicker = true },
+            isSessionActive = isRecording,
+            isHeadphonesConnected = isHeadphonesConnected
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // ───────── Import Audio ─────────
+        OutlinedButton(
+            onClick = onImportAudio,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Import Audio")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // ───────── Start / Stop Session ─────────
         Button(
             onClick = {
-                // NOTE for auditing:
-                // session start/stop should only gate service recording + playback here.
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 if (isRecording) {
                     isVisualizerActive = false
                     resetLevels(monitorLevels)
@@ -500,8 +504,7 @@ fun MonitorScreen(
                     try {
                         service?.stopRecording()
                         service?.setMaskingAutomationEnabled(false)
-                    } catch (_: Exception) {
-                    }
+                    } catch (_: Exception) {}
                     onStopRecording()
                 } else {
                     if (hasAudioPermission) {
@@ -515,39 +518,25 @@ fun MonitorScreen(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp)
-                .height(52.dp),
+                .height(44.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isRecording)
-                    MaterialTheme.colorScheme.error
-                else
-                    MaterialTheme.colorScheme.primary,
-                contentColor = if (isRecording)
-                    MaterialTheme.colorScheme.onError
-                else
-                    MaterialTheme.colorScheme.onPrimary
+                containerColor = if (isRecording) MaterialTheme.colorScheme.error
+                                 else MaterialTheme.colorScheme.primary,
+                contentColor   = if (isRecording) MaterialTheme.colorScheme.onError
+                                 else MaterialTheme.colorScheme.onPrimary
             ),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(14.dp)
         ) {
             Text(
-                text = if (isRecording) "Stop Session" else "Start Session",
-                fontWeight = FontWeight.Bold
+                text       = if (isRecording) "Stop Session" else "Start Session",
+                fontWeight = FontWeight.SemiBold,
+                style      = MaterialTheme.typography.bodyLarge
             )
         }
-    }
-}
 
-private fun brighterColor(color: Color, strength: Float = 0.2f): Color {
-    val safeStrength = strength.coerceIn(0f, 1f)
-    val lighten = { component: Float ->
-        (component + (1f - component) * safeStrength).coerceIn(0f, 1f)
+        Spacer(modifier = Modifier.height(8.dp))
     }
-    return Color(
-        red = lighten(color.red),
-        green = lighten(color.green),
-        blue = lighten(color.blue),
-        alpha = color.alpha
-    )
+    } // end outer Box
 }
 
 private fun dbToVisualizerLevel(dbfs: Float): Float {
@@ -575,4 +564,11 @@ private fun resetLevels(levels: MutableList<Float>) {
     for (index in levels.indices) {
         levels[index] = 0f
     }
+}
+
+private fun formatSessionElapsed(elapsedMs: Long): String {
+    val totalSeconds = (elapsedMs / 1000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return String.format("%d:%02d", minutes, seconds)
 }

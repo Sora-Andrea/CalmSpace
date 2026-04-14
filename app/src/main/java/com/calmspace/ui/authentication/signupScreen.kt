@@ -2,21 +2,24 @@ package com.calmspace.ui.authentication
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.foundation.background
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.calmspace.ui.components.AppIcons
 
 @Composable
 fun SignupScreen(
@@ -27,218 +30,200 @@ fun SignupScreen(
     val signupState by viewModel.signupState
     val context = LocalContext.current
 
-    // ─────────────────────────────────────────────
-    // UI STATE
-    // ─────────────────────────────────────────────
-    var username by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var username        by remember { mutableStateOf("") }
+    var email           by remember { mutableStateOf("") }
+    var password        by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    // ─────────────────────────────────────────────
-    // SIDE EFFECTS: handle success & error
-    // ─────────────────────────────────────────────
     LaunchedEffect(signupState) {
         when (val state = signupState) {
             is SignupState.Success -> {
+                context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("user_name",     username.trim())
+                    .putString("user_email",    email.trim())
+                    .putString("user_initials", username.trim().take(2).uppercase())
+                    .putBoolean("logged_in",    true)
+                    .apply()
                 onSignupSuccess()
                 viewModel.resetState()
             }
-            is SignupState.Error -> {
-                Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
-                viewModel.resetState()
-            }
+            is SignupState.Error -> { Toast.makeText(context, state.message, Toast.LENGTH_LONG).show(); viewModel.resetState() }
             else -> {}
         }
     }
 
-    // ─────────────────────────────────────────────
-    // SCREEN LAYOUT
-    // ─────────────────────────────────────────────
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
-        // ───────── APP TITLE ─────────
-        Text(
-            text = "CalmSpace",
-            style = MaterialTheme.typography.headlineLarge
+        // ───────── Icon ─────────
+        Icon(
+            imageVector        = AppIcons.Sleep,
+            contentDescription = null,
+            modifier           = Modifier.size(44.dp),
+            tint               = MaterialTheme.colorScheme.primary
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // ───────── LOGO PLACEHOLDER ─────────
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .background(
-                    color = Color.LightGray,
-                    shape = RoundedCornerShape(60.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("LOGO")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // ───────── TAGLINE ─────────
+        // ───────── Header ─────────
         Text(
-            text = "Bringing a little more peace\nand quiet to the world",
-            color = Color.Gray
+            text       = "Create Account",
+            style      = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // ───────── SCREEN TITLE ─────────
         Text(
-            text = "Signup",
-            style = MaterialTheme.typography.headlineMedium
+            text      = "Start your sleep journey today",
+            style     = MaterialTheme.typography.bodyMedium,
+            color     = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(36.dp))
 
-        // ───────── USERNAME INPUT ─────────
+        // ───────── Username ─────────
         OutlinedTextField(
-            value = username,
+            value         = username,
             onValueChange = { username = it },
-            placeholder = { Text("Enter Your Username") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            label         = { Text("Username") },
+            placeholder   = { Text("Your display name") },
+            modifier      = Modifier.fillMaxWidth(),
+            shape         = RoundedCornerShape(12.dp),
+            singleLine    = true
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ───────── EMAIL INPUT ─────────
+        // ───────── Email ─────────
         OutlinedTextField(
-            value = email,
+            value         = email,
             onValueChange = { email = it },
-            placeholder = { Text("Enter Your Email") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            label         = { Text("Email") },
+            placeholder   = { Text("you@example.com") },
+            modifier      = Modifier.fillMaxWidth(),
+            shape         = RoundedCornerShape(12.dp),
+            singleLine    = true
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ───────── PASSWORD INPUT ─────────
+        // ───────── Password ─────────
         OutlinedTextField(
-            value = password,
+            value         = password,
             onValueChange = { password = it },
-            placeholder = { Text("Enter Your Password") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            visualTransformation =
-                if (passwordVisible)
-                    VisualTransformation.None
-                else
-                    PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(
-                    onClick = { passwordVisible = !passwordVisible }
-                ) {
+            label         = { Text("Password") },
+            placeholder   = { Text("Min. 8 characters") },
+            modifier      = Modifier.fillMaxWidth(),
+            shape         = RoundedCornerShape(12.dp),
+            singleLine    = true,
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon  = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
-                        imageVector =
-                            if (passwordVisible)
-                                Icons.Default.Visibility
-                            else
-                                Icons.Default.VisibilityOff,
+                        imageVector        = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                         contentDescription = "Toggle password visibility"
                     )
                 }
             }
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
-        // ───────── SIGNUP ACTION ─────────
+        // ───────── Create Account button ─────────
         Button(
             onClick = {
-                // Basic validation
                 if (username.isBlank() || email.isBlank() || password.isBlank()) {
                     Toast.makeText(context, "All fields are required", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
                 viewModel.signUp(email, password, username)
             },
-            enabled = signupState !is SignupState.Loading,
+            enabled  = signupState !is SignupState.Loading,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color.Black
-            ),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(14.dp)
         ) {
             if (signupState is SignupState.Loading) {
                 CircularProgressIndicator(
-                    color = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    color       = MaterialTheme.colorScheme.onPrimary,
+                    modifier    = Modifier.size(22.dp),
+                    strokeWidth = 2.dp
                 )
             } else {
-                Text(text = "Signup", color = Color.White)
+                Text(
+                    text       = "Create Account",
+                    style      = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // ───────── BACK TO LOGIN ─────────
-        Row {
-            Text(text = "Already have an account? ")
-            TextButton(
-                onClick = onBackToLogin
-            ) {
-                Text("Login")
-            }
+        // ───────── Divider ─────────
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            Text(
+                text  = "  or continue with  ",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+            )
+            HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // ───────── OR DIVIDER ─────────
+        // ───────── Social buttons ─────────
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            HorizontalDivider(modifier = Modifier.weight(1f))
-            Text("  Or  ", color = Color.Gray)
-            HorizontalDivider(modifier = Modifier.weight(1f))
+            OutlinedButton(
+                onClick  = { /* TODO: Google signup */ },
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape    = RoundedCornerShape(12.dp)
+            ) {
+                Text("Google", fontWeight = FontWeight.Medium)
+            }
+            OutlinedButton(
+                onClick  = { /* TODO: Facebook signup */ },
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape    = RoundedCornerShape(12.dp)
+            ) {
+                Text("Facebook", fontWeight = FontWeight.Medium)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        // ───────── Sign in link ─────────
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text  = "Already have an account?",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            TextButton(onClick = onBackToLogin) {
+                Text(
+                    text       = "Sign In",
+                    style      = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-
-        // ───────── FACEBOOK SIGNUP ─────────
-        Button(
-            onClick = {
-                // TODO: Facebook signup
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color.Black
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Login with Facebook", color = Color.White)
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // ───────── GOOGLE SIGNUP ─────────
-        OutlinedButton(
-            onClick = {
-                // TODO: Google signup
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Login with Google")
-        }
     }
 }

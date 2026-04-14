@@ -15,6 +15,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.app.AlarmManager
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
 import com.calmspace.sleep.SleepScheduleManager
 import com.calmspace.ui.components.AppIcons
@@ -37,9 +41,11 @@ private val themeDisplayNames = mapOf(
 @Composable
 fun SettingsScreen(
     onNavigateToPrivacyPolicy: () -> Unit = {},
-    onNavigateToMediaPlayer: () -> Unit = {},
-    currentTheme: AppTheme = AppTheme.DEEP_WATER,
-    onThemeSelected: (AppTheme) -> Unit = {}
+    onNavigateToMediaPlayer:   () -> Unit = {},
+    onNavigateToProfile:       () -> Unit = {},
+    onLogOut:                  () -> Unit = {},
+    currentTheme:              AppTheme   = AppTheme.DEEP_WATER,
+    onThemeSelected:           (AppTheme) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -48,8 +54,8 @@ fun SettingsScreen(
     // TODO: Replace with ViewModel + Room database
     // ─────────────────────────────────────────────
 
-    // TODO: Replace with real user data from Room
-    val userName = "User"
+    var userName     by remember { mutableStateOf("Sleep User") }
+    var userInitials by remember { mutableStateOf("SU") }
 
     // Sleep Preferences
     // TODO: Wire to user preferences in Room
@@ -70,7 +76,8 @@ fun SettingsScreen(
     var recordingQuality by remember { mutableStateOf("High") }
     var autoplaySounds by remember { mutableStateOf(false) }
 
-    var showThemePicker by remember { mutableStateOf(false) }
+    var showThemePicker  by remember { mutableStateOf(false) }
+    var showLogOutDialog by remember { mutableStateOf(false) }
 
     // Schedule state — loaded from SharedPreferences
     var scheduleEnabled  by remember { mutableStateOf(false) }
@@ -83,6 +90,8 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+        userName     = prefs.getString("user_name",     "Sleep User") ?: "Sleep User"
+        userInitials = prefs.getString("user_initials", "SU")         ?: "SU"
         scheduleEnabled = prefs.getBoolean("schedule_enabled", false)
         bedtimeHour     = prefs.getInt("bedtime_hour",    22)
         bedtimeMinute   = prefs.getInt("bedtime_minute",  30)
@@ -117,7 +126,7 @@ fun SettingsScreen(
         // ───────── User Profile Card ─────────
         // TODO: Navigate to profile edit screen
         Card(
-            onClick = { },
+            onClick = onNavigateToProfile,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -131,18 +140,18 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // TODO: Replace with real user photo
                     Box(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .background(Color.LightGray),
+                            .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "U",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White
+                            text       = userInitials.ifBlank { "?" },
+                            style      = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color      = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
 
@@ -204,13 +213,28 @@ fun SettingsScreen(
             title = "Enable Schedule",
             checked = scheduleEnabled,
             onToggle = { enabled ->
-                scheduleEnabled = enabled
                 val prefs = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
-                prefs.edit().putBoolean("schedule_enabled", enabled).apply()
                 if (enabled) {
+                    // Android 12+ requires explicit user permission for exact alarms
+                    val alarmManager = context.getSystemService(AlarmManager::class.java)
+                    val canSchedule = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                            alarmManager.canScheduleExactAlarms()
+                    if (!canSchedule) {
+                        // Open system settings so the user can grant Alarms & Reminders
+                        context.startActivity(
+                            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                        // Don't enable until permission is granted
+                        return@SettingsToggleItem
+                    }
+                    scheduleEnabled = true
+                    prefs.edit().putBoolean("schedule_enabled", true).apply()
                     SleepScheduleManager.scheduleBedtimeReminder(context, bedtimeHour, bedtimeMinute)
                     SleepScheduleManager.scheduleWakeStop(context, wakeHour, wakeMinute)
                 } else {
+                    scheduleEnabled = false
+                    prefs.edit().putBoolean("schedule_enabled", false).apply()
                     SleepScheduleManager.cancelBedtimeReminder(context)
                     SleepScheduleManager.cancelWakeStop(context)
                 }
@@ -481,13 +505,33 @@ fun SettingsScreen(
             onClick = onNavigateToMediaPlayer
         )
 
-        // TODO: Show logout confirmation dialog
         SettingsItem(
             icon = AppIcons.ExitToApp,
             title = "Log Out",
             value = null,
-            onClick = { }
+            onClick = { showLogOutDialog = true }
         )
+
+        if (showLogOutDialog) {
+            AlertDialog(
+                onDismissRequest = { showLogOutDialog = false },
+                title  = { Text("Log Out") },
+                text   = { Text("Are you sure you want to log out?") },
+                confirmButton  = {
+                    TextButton(onClick = {
+                        context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean("logged_in", false).apply()
+                        showLogOutDialog = false
+                        onLogOut()
+                    }) {
+                        Text("Log Out", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLogOutDialog = false }) { Text("Cancel") }
+                }
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
     }

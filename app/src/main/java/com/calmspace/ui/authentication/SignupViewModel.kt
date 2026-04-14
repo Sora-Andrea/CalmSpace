@@ -21,25 +21,8 @@ class SignupViewModel : ViewModel() {
     val signupState = _signupState
 
     fun signUp(email: String, password: String, username: String) {
-        viewModelScope.launch {
-            _signupState.value = SignupState.Loading
-            try {
-                val result = auth.createUserWithEmailAndPassword(email, password).await()
-                val user = result.user
-                _signupState.value = SignupState.Success(user?.uid ?: "")
-            } catch (e: Exception) {
-                val errorMessage = when (e) {
-                    is com.google.firebase.auth.FirebaseAuthUserCollisionException ->
-                        "This email is already registered."
-                    is com.google.firebase.auth.FirebaseAuthWeakPasswordException ->
-                        "Password should be at least 6 characters."
-                    is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException ->
-                        "Invalid email format."
-                    else -> "Sign-up failed: ${e.message}"
-                }
-                _signupState.value = SignupState.Error(errorMessage)
-            }
-        }
+        // TODO: re-enable Firebase auth when backend is ready
+        _signupState.value = SignupState.Success("dev_user")
     }
 
     fun resetState() {
