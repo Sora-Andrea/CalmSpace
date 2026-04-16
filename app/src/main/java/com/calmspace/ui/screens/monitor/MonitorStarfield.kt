@@ -96,14 +96,16 @@ private val ANGLE_9  = PI.toFloat()
 private val ANGLE_3  = (2f * PI).toFloat()
 
 @Composable
-fun ShootingStarRing(modifier: Modifier = Modifier) {
+fun ShootingStarRing(
+    modifier: Modifier = Modifier,
+    initialDelayMs: Long = Random.nextLong(6_000L, 12_000L)
+) {
     val angle      = remember { Animatable(ANGLE_9) }
     var isVisible  by remember { mutableStateOf(false) }
     var tailDir    by remember { mutableFloatStateOf(1f) }  // +1 = 9→3, -1 = 3→9
 
     LaunchedEffect(Unit) {
-        // Short initial pause before first shot so screen has time to settle.
-        kotlinx.coroutines.delay(Random.nextLong(6_000L, 12_000L))
+        kotlinx.coroutines.delay(initialDelayMs)
 
         while (isActive) {
             val goForward = Random.nextBoolean()
