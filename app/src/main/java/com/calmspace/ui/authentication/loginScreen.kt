@@ -20,6 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.calmspace.ui.components.AppIcons
+import com.calmspace.ui.screens.monitor.MonitorStarfield
+import com.calmspace.ui.screens.monitor.ShootingStarRing
 
 @Composable
 fun LoginScreen(
@@ -47,6 +49,9 @@ fun LoginScreen(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+        MonitorStarfield(modifier = Modifier.fillMaxSize())
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -58,12 +63,21 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(48.dp))
 
         // ───────── Icon ─────────
-        Icon(
-            imageVector        = AppIcons.Sleep,
-            contentDescription = null,
-            modifier           = Modifier.size(44.dp),
-            tint               = MaterialTheme.colorScheme.primary
-        )
+        Box(
+            modifier = Modifier.size(100.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            ShootingStarRing(
+                modifier = Modifier.matchParentSize(),
+                initialDelayMs = 2000L
+            )
+            Icon(
+                imageVector        = AppIcons.Sleep,
+                contentDescription = null,
+                modifier           = Modifier.size(44.dp),
+                tint               = MaterialTheme.colorScheme.primary
+            )
+        }
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -219,4 +233,5 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
     }
+    } // end Box
 }

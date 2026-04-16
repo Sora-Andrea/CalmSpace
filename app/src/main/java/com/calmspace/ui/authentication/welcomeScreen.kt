@@ -14,12 +14,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.calmspace.ui.components.AppIcons
+import com.calmspace.ui.screens.monitor.MonitorStarfield
+import com.calmspace.ui.screens.monitor.ShootingStarRing
 
 @Composable
 fun WelcomeScreen(
     onLoginClick: () -> Unit,
     onSignupClick: () -> Unit
 ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        MonitorStarfield(modifier = Modifier.fillMaxSize())
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -31,18 +36,27 @@ fun WelcomeScreen(
 
         // ───────── Icon ─────────
         Box(
-            modifier = Modifier
-                .size(100.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+            modifier = Modifier.size(140.dp),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector        = AppIcons.Sleep,
-                contentDescription = null,
-                modifier           = Modifier.size(52.dp),
-                tint               = MaterialTheme.colorScheme.primary
+            ShootingStarRing(
+                modifier = Modifier.matchParentSize(),
+                initialDelayMs = 2000L
             )
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector        = AppIcons.Sleep,
+                    contentDescription = null,
+                    modifier           = Modifier.size(52.dp),
+                    tint               = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -109,5 +123,6 @@ fun WelcomeScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
     }
+    } // end Box
 }
 
