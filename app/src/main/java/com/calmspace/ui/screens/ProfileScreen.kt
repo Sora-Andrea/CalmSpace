@@ -21,9 +21,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.calmspace.service.SleepSessionLogStore
+import com.calmspace.service.buildSessionHistorySummary
 import com.calmspace.ui.components.AppIcons
 import com.calmspace.ui.onboarding.PREF_Q_HEALTH_FACTORS
 import com.calmspace.ui.onboarding.PREF_Q_SLEEP_ENVIRONMENT
@@ -41,6 +46,7 @@ fun ProfileScreen(
     onNavigateToSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // ── User identity ──
     var userName     by remember { mutableStateOf("") }
@@ -63,6 +69,7 @@ fun ProfileScreen(
             Pair("Health Factors",    false)
         ))
     }
+    var sessionSummary by remember { mutableStateOf(buildSessionHistorySummary(emptyList())) }
 
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("calmspace_prefs", Context.MODE_PRIVATE)
@@ -80,16 +87,32 @@ fun ProfileScreen(
             Pair("Sleep Habits",      prefs.getString(PREF_Q_SLEEP_HABITS,      "").isNullOrBlank().not()),
             Pair("Health Factors",    prefs.getString(PREF_Q_HEALTH_FACTORS,    "").isNullOrBlank().not())
         )
+        sessionSummary = buildSessionHistorySummary(
+            SleepSessionLogStore.getCompletedSessions(context)
+        )
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                sessionSummary = buildSessionHistorySummary(
+                    SleepSessionLogStore.getCompletedSessions(context)
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     val questionnaireProgress = questionnaireItems.count { it.second }
     val questionnaireTotal    = questionnaireItems.size
 
-    // Placeholder stats
-    val totalSessions = "147"
-    val totalSleep    = "1,234h"
-    val avgQuality    = "87%"
-    val weeklyData    = listOf(0.6f, 0.8f, 0.5f, 0.9f, 0.4f, 0.7f, 0.85f)
+    val totalSessions = sessionSummary.totalSessionsText
+    val totalSleep    = sessionSummary.totalSleepText
+    val avgQuality    = sessionSummary.avgQualityText
+    val weeklyData    = sessionSummary.weeklyBarsValues
 
     Box(modifier = Modifier.fillMaxSize()) {
         MonitorStarfield(modifier = Modifier.fillMaxSize())
@@ -166,10 +189,10 @@ fun ProfileScreen(
                     Column {
                         Text("Total Sleep Time", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                        Text("52h 30m", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(sessionSummary.thisWeekTotalText, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                     Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                        Text("+2.5h vs last week", style = MaterialTheme.typography.labelSmall,
+                        Text(sessionSummary.weekDeltaText, style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                     }

@@ -16,6 +16,15 @@ object SleepSessionLogStore {
     private const val KEY_ACTIVE_TRACK_ID = "active_track_id"
     private const val KEY_COMPLETED_SESSIONS_JSON = "completed_sessions_json"
 
+    data class CompletedSessionRecord(
+        val userId: String,
+        val trackId: String?,
+        val startedAtUtcMs: Long,
+        val endedAtUtcMs: Long,
+        val durationMs: Long,
+        val endReason: String
+    )
+
     fun markSessionStarted(
         context: Context,
         userId: String,
@@ -81,5 +90,46 @@ object SleepSessionLogStore {
             .remove(KEY_ACTIVE_TRACK_ID)
             .apply()
     }
-}
 
+    fun getCompletedSessions(
+        context: Context,
+        userId: String? = null
+    ): List<CompletedSessionRecord> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_COMPLETED_SESSIONS_JSON, "[]").orEmpty()
+        val array = runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
+        val records = mutableListOf<CompletedSessionRecord>()
+
+        for (index in 0 until array.length()) {
+            val obj = array.optJSONObject(index) ?: continue
+            val parsed = parseCompletedSession(obj) ?: continue
+            if (userId == null || parsed.userId == userId) {
+                records += parsed
+            }
+        }
+
+        return records.sortedByDescending { it.endedAtUtcMs }
+    }
+
+    private fun parseCompletedSession(obj: JSONObject): CompletedSessionRecord? {
+        val startedAtUtcMs = obj.optLong("startedAtUtcMs", -1L)
+        val endedAtUtcMs = obj.optLong("endedAtUtcMs", -1L)
+        val durationRaw = obj.optLong("durationMs", -1L)
+
+        if (startedAtUtcMs <= 0L || endedAtUtcMs <= 0L) return null
+        val durationMs = if (durationRaw >= 0L) {
+            durationRaw
+        } else {
+            (endedAtUtcMs - startedAtUtcMs).coerceAtLeast(0L)
+        }
+
+        return CompletedSessionRecord(
+            userId = obj.optString("userId", "local"),
+            trackId = obj.optString("trackId", null),
+            startedAtUtcMs = startedAtUtcMs,
+            endedAtUtcMs = endedAtUtcMs,
+            durationMs = durationMs,
+            endReason = obj.optString("endReason", "unknown")
+        )
+    }
+}

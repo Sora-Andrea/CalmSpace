@@ -16,7 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.calmspace.service.SleepSessionLogStore
+import com.calmspace.service.buildSessionHistorySummary
 import com.calmspace.ui.theme.MoonGold
 import com.calmspace.ui.screens.monitor.MonitorStarfield
 import androidx.compose.ui.unit.dp
@@ -38,43 +43,47 @@ fun HomeScreen(
     // TODO: Replace with ViewModel + Room database
     // ─────────────────────────────────────────────
 
-    val context  = LocalContext.current
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var username by remember { mutableStateOf("") }
+    var sessionSummary by remember { mutableStateOf(buildSessionHistorySummary(emptyList())) }
 
     LaunchedEffect(Unit) {
         username = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
             .getString("user_name", "") ?: ""
+        sessionSummary = buildSessionHistorySummary(
+            SleepSessionLogStore.getCompletedSessions(context)
+        )
     }
 
-    // TODO: Replace with real sleep quality score from last session
-    val sleepQualityMessage = "Your sleep quality is improving!"
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                sessionSummary = buildSessionHistorySummary(
+                    SleepSessionLogStore.getCompletedSessions(context)
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
-    // TODO: Replace with last night's session data from Room
-    val lastNightHours = "7h 45m"
-    val lastNightDepth = "65%"
-    val lastNightQuality = "86%"
-
-    // TODO: Replace with weekly session aggregates from Room
-    // Values represent relative sleep duration per day (0.0 - 1.0) for bar chart
-    // Order: Mon, Tue, Wed, Thu, Fri, Sat, Sun
-    val weeklyData = listOf(
-        Pair("Mo", 0.6f),
-        Pair("Tu", 0.8f),
-        Pair("We", 0.5f),
-        Pair("Th", 0.9f),
-        Pair("Fr", 0.4f),
-        Pair("Sa", 0.7f),
-        Pair("Su", 0.85f)
-    )
-
-    // TODO: Replace with actual weekly average from Room
-    val weeklyAverage = "7.8 hrs"
-
-    // TODO: Replace with most recent session from Room
-    val recentSessionDate = "Jan 18"
-    val recentSessionSound = "Brown Noise"
-    val recentSessionDuration = "8h 15m"
-    val recentSessionQuality = "Good"
+    val sleepQualityMessage = if (sessionSummary.hasSessions) {
+        "Average session quality: ${sessionSummary.avgQualityText}"
+    } else {
+        "Start your first session to build sleep insights."
+    }
+    val lastNightHours = sessionSummary.lastNightHoursText
+    val lastNightDepth = sessionSummary.lastNightDepthText
+    val lastNightQuality = sessionSummary.lastNightQualityText
+    val weeklyData = sessionSummary.weeklyBarsLabeled
+    val weeklyAverage = sessionSummary.weeklyAverageHoursText
+    val recentSessionDate = sessionSummary.recentDateText
+    val recentSessionSound = sessionSummary.recentSoundText
+    val recentSessionDuration = sessionSummary.recentDurationText
+    val recentSessionQuality = sessionSummary.recentQualityText
 
     // ─────────────────────────────────────────────
     // Layout
