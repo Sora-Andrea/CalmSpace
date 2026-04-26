@@ -43,6 +43,7 @@ import kotlin.math.sqrt
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import androidx.core.app.ActivityCompat
+import com.google.firebase.auth.FirebaseAuth
 import java.util.concurrent.ArrayBlockingQueue
 import kotlin.random.Random
 
@@ -431,9 +432,10 @@ class NoiseMonitorService : Service() {
         sessionStartElapsedRealtimeMs = startElapsedRealtimeMs
         _sessionStartedAtUtcMs.value = now
         _sessionElapsedMs.value = 0L
+        val activeUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "local"
         SleepSessionLogStore.markSessionStarted(
             context = applicationContext,
-            userId = "local",
+            userId = activeUserId,
             trackId = _selectedSound.value.name,
             startUtcMs = now,
             startElapsedMs = startElapsedRealtimeMs

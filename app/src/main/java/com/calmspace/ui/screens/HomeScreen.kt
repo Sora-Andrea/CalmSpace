@@ -22,6 +22,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.calmspace.service.SleepSessionLogStore
 import com.calmspace.service.buildSessionHistorySummary
+import com.google.firebase.auth.FirebaseAuth
 import com.calmspace.ui.theme.MoonGold
 import com.calmspace.ui.screens.monitor.MonitorStarfield
 import androidx.compose.ui.unit.dp
@@ -47,12 +48,13 @@ fun HomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var username by remember { mutableStateOf("") }
     var sessionSummary by remember { mutableStateOf(buildSessionHistorySummary(emptyList())) }
+    val activeUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "local" }
 
     LaunchedEffect(Unit) {
         username = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
             .getString("user_name", "") ?: ""
         sessionSummary = buildSessionHistorySummary(
-            SleepSessionLogStore.getCompletedSessions(context)
+            SleepSessionLogStore.getCompletedSessionsForUser(context, activeUserId)
         )
     }
 
@@ -60,7 +62,7 @@ fun HomeScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 sessionSummary = buildSessionHistorySummary(
-                    SleepSessionLogStore.getCompletedSessions(context)
+                    SleepSessionLogStore.getCompletedSessionsForUser(context, activeUserId)
                 )
             }
         }
