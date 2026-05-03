@@ -29,6 +29,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.calmspace.service.SleepSessionLogStore
 import com.calmspace.service.buildSessionHistorySummary
+import com.google.firebase.auth.FirebaseAuth
 import com.calmspace.ui.components.AppIcons
 import com.calmspace.ui.onboarding.PREF_Q_HEALTH_FACTORS
 import com.calmspace.ui.onboarding.PREF_Q_SLEEP_ENVIRONMENT
@@ -47,6 +48,7 @@ fun ProfileScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val activeUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "local" }
 
     // ── User identity ──
     var userName     by remember { mutableStateOf("") }
@@ -88,7 +90,7 @@ fun ProfileScreen(
             Pair("Health Factors",    prefs.getString(PREF_Q_HEALTH_FACTORS,    "").isNullOrBlank().not())
         )
         sessionSummary = buildSessionHistorySummary(
-            SleepSessionLogStore.getCompletedSessions(context)
+            SleepSessionLogStore.getCompletedSessionsForUser(context, activeUserId)
         )
     }
 
@@ -96,7 +98,7 @@ fun ProfileScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 sessionSummary = buildSessionHistorySummary(
-                    SleepSessionLogStore.getCompletedSessions(context)
+                    SleepSessionLogStore.getCompletedSessionsForUser(context, activeUserId)
                 )
             }
         }

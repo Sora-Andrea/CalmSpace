@@ -15,6 +15,16 @@ object SleepSessionLogStore {
     private const val KEY_ACTIVE_USER_ID = "active_user_id"
     private const val KEY_ACTIVE_TRACK_ID = "active_track_id"
     private const val KEY_COMPLETED_SESSIONS_JSON = "completed_sessions_json"
+    private const val KEY_METRICS = "metrics"
+    private const val KEY_BUCKET_DURATION_MS = "bucketDurationMs"
+    private const val KEY_LABEL_HIT_COUNT = "labelHitCount"
+    private const val KEY_MASKING_PLAYBACK_MS = "maskingPlaybackMs"
+
+    data class SessionMetrics(
+        val bucketDurationMs: Map<String, Long>,
+        val labelHitCount: Map<String, Int>,
+        val maskingPlaybackMs: Long
+    )
 
     data class CompletedSessionRecord(
         val userId: String,
@@ -22,7 +32,8 @@ object SleepSessionLogStore {
         val startedAtUtcMs: Long,
         val endedAtUtcMs: Long,
         val durationMs: Long,
-        val endReason: String
+        val endReason: String,
+        val metrics: SessionMetrics? = null
     )
 
     fun markSessionStarted(
@@ -45,7 +56,8 @@ object SleepSessionLogStore {
         context: Context,
         endUtcMs: Long,
         endElapsedMs: Long,
-        endReason: String
+        endReason: String,
+        metrics: SessionMetrics? = null
     ) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val startUtcMs = prefs.getLong(KEY_ACTIVE_START_UTC_MS, -1L)
@@ -69,6 +81,9 @@ object SleepSessionLogStore {
             put("endedAtUtcMs", endUtcMs)
             put("durationMs", durationMs)
             put("endReason", endReason)
+            if (metrics != null) {
+                put(KEY_METRICS, metricsToJson(metrics))
+            }
         }
         array.put(record)
 
@@ -111,6 +126,33 @@ object SleepSessionLogStore {
         return records.sortedByDescending { it.endedAtUtcMs }
     }
 
+    /**
+     * Returns sessions for a specific user and falls back to legacy "local" rows
+     * when scoped rows are not present yet.
+     */
+    fun getCompletedSessionsForUser(
+        context: Context,
+        userId: String
+    ): List<CompletedSessionRecord> {
+        val scoped = getCompletedSessions(context, userId)
+        if (scoped.isNotEmpty() || userId == "local") {
+            return scoped
+        }
+        return getCompletedSessions(context, "local")
+    }
+
+    /**
+     * Returns most recent sessions for a specific user
+     */
+    fun getRecentSessionsForUser(
+        context: Context,
+        userId: String,
+        limit: Int = 5
+    ): List<CompletedSessionRecord> {
+        val safeLimit = limit.coerceAtLeast(0)
+        return getCompletedSessions(context, userId).take(safeLimit)
+    }
+
     private fun parseCompletedSession(obj: JSONObject): CompletedSessionRecord? {
         val startedAtUtcMs = obj.optLong("startedAtUtcMs", -1L)
         val endedAtUtcMs = obj.optLong("endedAtUtcMs", -1L)
@@ -125,11 +167,73 @@ object SleepSessionLogStore {
 
         return CompletedSessionRecord(
             userId = obj.optString("userId", "local"),
-            trackId = obj.optString("trackId", null),
+            trackId = if (obj.has("trackId") && !obj.isNull("trackId")) {
+                obj.optString("trackId")
+            } else {
+                null
+            },
             startedAtUtcMs = startedAtUtcMs,
             endedAtUtcMs = endedAtUtcMs,
             durationMs = durationMs,
-            endReason = obj.optString("endReason", "unknown")
+            endReason = obj.optString("endReason", "unknown"),
+            metrics = obj.optJSONObject(KEY_METRICS)?.let { metricsFromJson(it) }
         )
+    }
+
+    private fun metricsToJson(metrics: SessionMetrics): JSONObject {
+        return JSONObject().apply {
+            put(KEY_BUCKET_DURATION_MS, mapLongToJson(metrics.bucketDurationMs))
+            put(KEY_LABEL_HIT_COUNT, mapIntToJson(metrics.labelHitCount))
+            put(KEY_MASKING_PLAYBACK_MS, metrics.maskingPlaybackMs.coerceAtLeast(0L))
+        }
+    }
+
+    private fun metricsFromJson(obj: JSONObject): SessionMetrics {
+        val bucketDurationMs = jsonToLongMap(obj.optJSONObject(KEY_BUCKET_DURATION_MS))
+        val labelHitCount = jsonToIntMap(obj.optJSONObject(KEY_LABEL_HIT_COUNT))
+        val maskingPlaybackMs = obj.optLong(KEY_MASKING_PLAYBACK_MS, 0L).coerceAtLeast(0L)
+        return SessionMetrics(
+            bucketDurationMs = bucketDurationMs,
+            labelHitCount = labelHitCount,
+            maskingPlaybackMs = maskingPlaybackMs
+        )
+    }
+
+    private fun mapLongToJson(map: Map<String, Long>): JSONObject {
+        return JSONObject().apply {
+            map.forEach { (key, value) ->
+                put(key, value.coerceAtLeast(0L))
+            }
+        }
+    }
+
+    private fun mapIntToJson(map: Map<String, Int>): JSONObject {
+        return JSONObject().apply {
+            map.forEach { (key, value) ->
+                put(key, value.coerceAtLeast(0))
+            }
+        }
+    }
+
+    private fun jsonToLongMap(obj: JSONObject?): Map<String, Long> {
+        if (obj == null) return emptyMap()
+        val map = LinkedHashMap<String, Long>()
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            map[key] = obj.optLong(key, 0L).coerceAtLeast(0L)
+        }
+        return map
+    }
+
+    private fun jsonToIntMap(obj: JSONObject?): Map<String, Int> {
+        if (obj == null) return emptyMap()
+        val map = LinkedHashMap<String, Int>()
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            map[key] = obj.optInt(key, 0).coerceAtLeast(0)
+        }
+        return map
     }
 }

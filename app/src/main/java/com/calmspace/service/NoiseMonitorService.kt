@@ -43,6 +43,7 @@ import kotlin.math.sqrt
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import androidx.core.app.ActivityCompat
+import com.google.firebase.auth.FirebaseAuth
 import java.util.concurrent.ArrayBlockingQueue
 import kotlin.random.Random
 
@@ -176,6 +177,13 @@ class NoiseMonitorService : Service() {
     private var running = false
     private var sessionStartElapsedRealtimeMs: Long? = null
     private var hasActiveSessionLog = false
+
+    // Session metrics (persisted into SleepSessionLogStore when session ends).
+    private val sessionMetricsLock = Any()
+    private val sessionBucketDurationMs = LinkedHashMap<String, Long>()
+    private val sessionLabelHitCount = LinkedHashMap<String, Int>()
+    private var sessionMaskingPlaybackMs: Long = 0L
+    @Volatile private var sessionCurrentBucket: MaskingBucket = MaskingBucket.UNKNOWN
 
     // Noise playback
     private var audioTrack: AudioTrack? = null
@@ -426,14 +434,16 @@ class NoiseMonitorService : Service() {
         running = true
         _isRecording.value = true
         _soundEvents.value = emptyList()
+        resetSessionMetrics()
         val now = System.currentTimeMillis()
         val startElapsedRealtimeMs = SystemClock.elapsedRealtime()
         sessionStartElapsedRealtimeMs = startElapsedRealtimeMs
         _sessionStartedAtUtcMs.value = now
         _sessionElapsedMs.value = 0L
+        val activeUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "local"
         SleepSessionLogStore.markSessionStarted(
             context = applicationContext,
-            userId = "local",
+            userId = activeUserId,
             trackId = _selectedSound.value.name,
             startUtcMs = now,
             startElapsedMs = startElapsedRealtimeMs
@@ -558,10 +568,16 @@ class NoiseMonitorService : Service() {
                 var lastInferenceMs = now
                 var lastAutomationSmoothingMs = now
                 var lastLoudWindowMs = now
+                var lastMetricsTickElapsedMs = SystemClock.elapsedRealtime()
 
                 while (running) {
                     val read = recorder?.read(buf, 0, bufSizeShorts) ?: break
                     if (read > 0) {
+                        val nowElapsedMs = SystemClock.elapsedRealtime()
+                        val tickDeltaMs = (nowElapsedMs - lastMetricsTickElapsedMs).coerceAtLeast(0L)
+                        recordSessionMetricsTick(tickDeltaMs)
+                        lastMetricsTickElapsedMs = nowElapsedMs
+
                         val latestDb = rmsToDb(buf, read)
                         smoothedDb = smoothedDb * 0.7f + latestDb * 0.3f
 
@@ -709,7 +725,8 @@ class NoiseMonitorService : Service() {
                         context = applicationContext,
                         endUtcMs = System.currentTimeMillis(),
                         endElapsedMs = SystemClock.elapsedRealtime(),
-                        endReason = "service_stop"
+                        endReason = "service_stop",
+                        metrics = buildSessionMetrics()
                     )
                     hasActiveSessionLog = false
                 }
@@ -732,7 +749,8 @@ class NoiseMonitorService : Service() {
                 context = applicationContext,
                 endUtcMs = System.currentTimeMillis(),
                 endElapsedMs = SystemClock.elapsedRealtime(),
-                endReason = "user_stop"
+                endReason = "user_stop",
+                metrics = buildSessionMetrics()
             )
             hasActiveSessionLog = false
         } else {
@@ -930,6 +948,7 @@ class NoiseMonitorService : Service() {
         topPredictions: List<Pair<String, Float>> = emptyList(),
         baseline: Float = _startingVolume.value
     ) {
+        sessionCurrentBucket = decision.winner
         _automatedDecisionReason.value = "${decision.displayWinner}: ${decision.reason}"
         _currentMaskingBucket.value = decision.displayWinner
         _currentTopPrediction.value = if (decision.winner == MaskingBucket.UNKNOWN) {
@@ -937,6 +956,9 @@ class NoiseMonitorService : Service() {
         } else {
             topPredictions.firstOrNull()?.first.orEmpty()
         }
+        topPredictions.firstOrNull()?.first
+            ?.takeIf { it.isNotBlank() }
+            ?.let { incrementLabelHit(it) }
 
         if (decision.shouldAffectPlayback) {
             _automatedTargetVolume.value = dampenTargetWithPlaybackLoudness(
@@ -965,6 +987,43 @@ class NoiseMonitorService : Service() {
         val duckAmount = normalizedLoudness * AudioTimingConfig.MASKING_AUTOMATION_DUCKING_FACTOR
         val targetIncrease = max(0f, target - clampedBaseline)
         return (clampedBaseline + targetIncrease * (1f - duckAmount)).coerceIn(clampedBaseline, 1f)
+    }
+
+    private fun resetSessionMetrics() {
+        synchronized(sessionMetricsLock) {
+            sessionBucketDurationMs.clear()
+            sessionLabelHitCount.clear()
+            sessionMaskingPlaybackMs = 0L
+            sessionCurrentBucket = MaskingBucket.UNKNOWN
+        }
+    }
+
+    private fun recordSessionMetricsTick(deltaMs: Long) {
+        if (deltaMs <= 0L) return
+        synchronized(sessionMetricsLock) {
+            val bucketKey = sessionCurrentBucket.name
+            sessionBucketDurationMs[bucketKey] =
+                (sessionBucketDurationMs[bucketKey] ?: 0L) + deltaMs
+            if (isNoiseThreadRunning.get()) {
+                sessionMaskingPlaybackMs += deltaMs
+            }
+        }
+    }
+
+    private fun incrementLabelHit(label: String) {
+        synchronized(sessionMetricsLock) {
+            sessionLabelHitCount[label] = (sessionLabelHitCount[label] ?: 0) + 1
+        }
+    }
+
+    private fun buildSessionMetrics(): SleepSessionLogStore.SessionMetrics {
+        synchronized(sessionMetricsLock) {
+            return SleepSessionLogStore.SessionMetrics(
+                bucketDurationMs = sessionBucketDurationMs.toMap(),
+                labelHitCount = sessionLabelHitCount.toMap(),
+                maskingPlaybackMs = sessionMaskingPlaybackMs.coerceAtLeast(0L)
+            )
+        }
     }
 
     private fun currentPlaybackGainForEstimation(): Float {
