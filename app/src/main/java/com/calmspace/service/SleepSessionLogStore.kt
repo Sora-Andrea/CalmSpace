@@ -141,6 +141,18 @@ object SleepSessionLogStore {
         return getCompletedSessions(context, "local")
     }
 
+    /**
+     * Returns most recent sessions for a specific user
+     */
+    fun getRecentSessionsForUser(
+        context: Context,
+        userId: String,
+        limit: Int = 5
+    ): List<CompletedSessionRecord> {
+        val safeLimit = limit.coerceAtLeast(0)
+        return getCompletedSessions(context, userId).take(safeLimit)
+    }
+
     private fun parseCompletedSession(obj: JSONObject): CompletedSessionRecord? {
         val startedAtUtcMs = obj.optLong("startedAtUtcMs", -1L)
         val endedAtUtcMs = obj.optLong("endedAtUtcMs", -1L)

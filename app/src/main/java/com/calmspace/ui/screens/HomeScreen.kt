@@ -1,16 +1,20 @@
 package com.calmspace.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +31,10 @@ import com.calmspace.ui.theme.MoonGold
 import com.calmspace.ui.screens.monitor.MonitorStarfield
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 // ─────────────────────────────────────────────
 // Home Screen
@@ -48,22 +56,40 @@ fun HomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var username by remember { mutableStateOf("") }
     var sessionSummary by remember { mutableStateOf(buildSessionHistorySummary(emptyList())) }
+    var recentSessions by remember { mutableStateOf<List<SleepSessionLogStore.CompletedSessionRecord>>(emptyList()) }
+    var recentSessionsError by remember { mutableStateOf<String?>(null) }
+    var expandedSessionIds by rememberSaveable { mutableStateOf(setOf<String>()) }
     val activeUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "local" }
+
+    fun refreshSessionHistory() {
+        runCatching {
+            val allSessions = SleepSessionLogStore.getCompletedSessions(context, activeUserId)
+            val recent = SleepSessionLogStore.getRecentSessionsForUser(
+                context = context,
+                userId = activeUserId,
+                limit = 10
+            )
+            allSessions to recent
+        }.onSuccess { (allSessions, recent) ->
+            sessionSummary = buildSessionHistorySummary(allSessions)
+            recentSessions = recent
+            recentSessionsError = null
+        }.onFailure { error ->
+            recentSessions = emptyList()
+            recentSessionsError = "Failed to load recent sessions: ${error.message ?: "unknown error"}"
+        }
+    }
 
     LaunchedEffect(Unit) {
         username = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
             .getString("user_name", "") ?: ""
-        sessionSummary = buildSessionHistorySummary(
-            SleepSessionLogStore.getCompletedSessionsForUser(context, activeUserId)
-        )
+        refreshSessionHistory()
     }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                sessionSummary = buildSessionHistorySummary(
-                    SleepSessionLogStore.getCompletedSessionsForUser(context, activeUserId)
-                )
+                refreshSessionHistory()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -72,21 +98,9 @@ fun HomeScreen(
         }
     }
 
-    val sleepQualityMessage = if (sessionSummary.hasSessions) {
-        "Average session quality: ${sessionSummary.avgQualityText}"
-    } else {
-        "Start your first session to build sleep insights."
-    }
     val lastNightHours = sessionSummary.lastNightHoursText
-    val lastNightDepth = sessionSummary.lastNightDepthText
-    val lastNightQuality = sessionSummary.lastNightQualityText
     val weeklyData = sessionSummary.weeklyBarsLabeled
     val weeklyAverage = sessionSummary.weeklyAverageHoursText
-    val recentSessionDate = sessionSummary.recentDateText
-    val recentSessionSound = sessionSummary.recentSoundText
-    val recentSessionDuration = sessionSummary.recentDurationText
-    val recentSessionQuality = sessionSummary.recentQualityText
-
     // ─────────────────────────────────────────────
     // Layout
     // ─────────────────────────────────────────────
@@ -128,14 +142,6 @@ fun HomeScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = sleepQualityMessage,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
-        )
-
         Spacer(modifier = Modifier.height(24.dp))
 
         // ───────── Sleep Overview Card ─────────
@@ -173,13 +179,9 @@ fun HomeScreen(
                 // ───── Stats Row ─────
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.Center
                 ) {
-
-                    // TODO: Replace with real data from last session
                     SleepStat(label = "Duration", value = lastNightHours)
-                    SleepStat(label = "Avg Depth", value = lastNightDepth)
-                    SleepStat(label = "Quality", value = lastNightQuality)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -224,7 +226,7 @@ fun HomeScreen(
             Column(modifier = Modifier.padding(16.dp)) {
 
                 Text(
-                    text = "Avg Quality",
+                    text = "Avg Duration",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
@@ -266,13 +268,53 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // TODO: Replace with real session list from Room (most recent only for now)
-        SessionRow(
-            date = recentSessionDate,
-            sound = recentSessionSound,
-            duration = recentSessionDuration,
-            quality = recentSessionQuality
-        )
+        when {
+            recentSessionsError != null -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = recentSessionsError.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+            recentSessions.isEmpty() -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "No recent sessions yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+            else -> {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    recentSessions.forEach { session ->
+                        val sessionId = sessionStableId(session)
+                        val isExpanded = expandedSessionIds.contains(sessionId)
+                        RecentSessionExpandableRow(
+                            session = session,
+                            expanded = isExpanded,
+                            onToggle = {
+                                expandedSessionIds = if (isExpanded) {
+                                    expandedSessionIds - sessionId
+                                } else {
+                                    expandedSessionIds + sessionId
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
     }
@@ -406,6 +448,177 @@ fun SessionRow(
                     color = Color.Gray
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun RecentSessionExpandableRow(
+    session: SleepSessionLogStore.CompletedSessionRecord,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column {
+                        Text(
+                            text = formatSessionDateTime(session.startedAtUtcMs),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = trackDisplayName(session.trackId),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = formatDurationCompact(session.durationMs),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse session details" else "Expand session details"
+                    )
+                }
+            }
+
+            if (expanded) {
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "End Reason: ${session.endReason}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "Duration: ${formatDurationCompact(session.durationMs)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                val metrics = session.metrics
+                if (metrics == null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Metrics unavailable for this session.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Masking Playback: ${formatDurationCompact(metrics.maskingPlaybackMs)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Bucket Durations",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (metrics.bucketDurationMs.isEmpty()) {
+                        Text(
+                            text = "No bucket activity recorded.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    } else {
+                        metrics.bucketDurationMs
+                            .toList()
+                            .sortedByDescending { it.second }
+                            .forEach { (bucket, durationMs) ->
+                                Text(
+                                    text = "• $bucket: ${formatDurationCompact(durationMs)}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Top Label Hits",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (metrics.labelHitCount.isEmpty()) {
+                        Text(
+                            text = "No label hits recorded.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    } else {
+                        metrics.labelHitCount
+                            .toList()
+                            .sortedByDescending { it.second }
+                            .forEach { (label, count) ->
+                                Text(
+                                    text = "• $label: $count",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun sessionStableId(session: SleepSessionLogStore.CompletedSessionRecord): String {
+    return "${session.startedAtUtcMs}_${session.endedAtUtcMs}"
+}
+
+private fun formatSessionDateTime(utcMs: Long): String {
+    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy · h:mm a", Locale.US)
+    return Instant.ofEpochMilli(utcMs)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDateTime()
+        .format(formatter)
+}
+
+private fun formatDurationCompact(durationMs: Long): String {
+    val safe = durationMs.coerceAtLeast(0L)
+    val hours = safe / 3_600_000L
+    val minutes = (safe % 3_600_000L) / 60_000L
+    return "${hours}h ${minutes.toString().padStart(2, '0')}m"
+}
+
+private fun trackDisplayName(trackId: String?): String {
+    return when (trackId) {
+        "white_noise" -> "Bright Static"
+        "pink_noise" -> "Balanced Rain"
+        "brown_noise" -> "Deep Rumble"
+        "blue_noise" -> "High Hiss"
+        "grey_noise" -> "Neutral Static"
+        null -> "Ambient Sound"
+        else -> trackId.replace('_', ' ').replaceFirstChar { char ->
+            if (char.isLowerCase()) char.titlecase(Locale.US) else char.toString()
         }
     }
 }
