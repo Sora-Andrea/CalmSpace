@@ -29,6 +29,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.calmspace.ui.authentication.LoginScreen
 import com.calmspace.ui.authentication.SignupScreen
 import com.calmspace.ui.authentication.WelcomeScreen
@@ -200,8 +201,8 @@ class MainActivity : ComponentActivity() {
             AppTheme.valueOf(prefs.getString("app_theme", AppTheme.DEEP_WATER.name) ?: "")
         }.getOrDefault(AppTheme.DEEP_WATER)
         //
-        // val startDestination = Routes.MONITOR
-        val startDestination = if (prefs.getBoolean("logged_in", false)) Routes.HOME else Routes.WELCOME
+        val startDestination = Routes.MONITOR
+        //val startDestination = if (prefs.getBoolean("logged_in", false)) Routes.HOME else Routes.WELCOME
         hasMicPermissionState.value = hasRecordAudioPermission()
         userTracksManager = UserTracksManager(this)
         val savedUris = userTracksManager.getSavedUris()
@@ -227,8 +228,11 @@ class MainActivity : ComponentActivity() {
                             BottomNavigationBar(
                                 currentRoute = currentRoute,
                                 onNavigate = { route ->
+                                    if (currentRoute == route) return@BottomNavigationBar
                                     navController.navigate(route) {
-                                        popUpTo(Routes.HOME) { saveState = true }
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
                                         launchSingleTop = true
                                         restoreState = true
                                     }
@@ -303,7 +307,9 @@ class MainActivity : ComponentActivity() {
                         composable(Routes.HOME) {
                             HomeScreen(
                                 onStartSession = {
-                                    navController.navigate(Routes.MONITOR)
+                                    navController.navigate(Routes.MONITOR) {
+                                        launchSingleTop = true
+                                    }
                                 },
                                 onSeeAllSessions = {
                                     // TODO: Navigate to session history screen
