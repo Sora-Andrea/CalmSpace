@@ -315,7 +315,11 @@ fun MonitorScreen(
     // ─────────────────────────────────────────────────────────────────
 
     val bucketLabel = if (isRecording) {
-        currentBucket.ifBlank { "Listening..." }
+        currentBucket
+            .ifBlank { "Listening..." }
+            .let { label ->
+                if (label.equals("UNKNOWN", ignoreCase = true)) "Silence / Unknown" else label
+            }
     } else {
         "No session active"
     }

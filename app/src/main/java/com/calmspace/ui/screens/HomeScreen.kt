@@ -555,7 +555,7 @@ private fun RecentSessionExpandableRow(
                             .sortedByDescending { it.second }
                             .forEach { (bucket, durationMs) ->
                                 Text(
-                                    text = "• $bucket: ${formatDurationCompact(durationMs)}",
+                                    text = "• ${sessionBucketDisplayName(bucket)}: ${formatDurationCompact(durationMs)}",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -618,6 +618,16 @@ private fun trackDisplayName(trackId: String?): String {
         "grey_noise" -> "Neutral Static"
         null -> "Ambient Sound"
         else -> trackId.replace('_', ' ').replaceFirstChar { char ->
+            if (char.isLowerCase()) char.titlecase(Locale.US) else char.toString()
+        }
+    }
+}
+
+private fun sessionBucketDisplayName(bucket: String): String {
+    return if (bucket.equals("UNKNOWN", ignoreCase = true)) {
+        "Silence / Unknown"
+    } else {
+        bucket.replace('_', ' ').replaceFirstChar { char ->
             if (char.isLowerCase()) char.titlecase(Locale.US) else char.toString()
         }
     }
