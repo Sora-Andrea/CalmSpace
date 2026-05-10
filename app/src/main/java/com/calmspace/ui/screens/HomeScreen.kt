@@ -184,22 +184,31 @@ fun HomeScreen(
                     SleepStat(label = "Duration", value = lastNightHours)
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // ───── Start Session Button ─────
-                Button(
-                    onClick = onStartSession,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Start Sleep Session")
-                }
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ───── Start Session Button ─────
+        Button(
+            onClick = onStartSession,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor   = Color.White
+            ),
+            elevation = ButtonDefaults.buttonElevation(
+                defaultElevation  = 8.dp,
+                pressedElevation  = 2.dp
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Start Sleep Session")
         }
 
         Spacer(modifier = Modifier.height(24.dp))
