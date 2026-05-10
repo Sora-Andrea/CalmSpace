@@ -201,8 +201,8 @@ class MainActivity : ComponentActivity() {
             AppTheme.valueOf(prefs.getString("app_theme", AppTheme.DEEP_WATER.name) ?: "")
         }.getOrDefault(AppTheme.DEEP_WATER)
         //
-        val startDestination = Routes.MONITOR
-        //val startDestination = if (prefs.getBoolean("logged_in", false)) Routes.HOME else Routes.WELCOME
+        //val startDestination = Routes.MONITOR
+        val startDestination = if (prefs.getBoolean("logged_in", false)) Routes.HOME else Routes.WELCOME
         hasMicPermissionState.value = hasRecordAudioPermission()
         userTracksManager = UserTracksManager(this)
         val savedUris = userTracksManager.getSavedUris()
@@ -229,12 +229,15 @@ class MainActivity : ComponentActivity() {
                                 currentRoute = currentRoute,
                                 onNavigate = { route ->
                                     if (currentRoute == route) return@BottomNavigationBar
-                                    navController.navigate(route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
+                                    val popped = navController.popBackStack(route, inclusive = false)
+                                    if (!popped) {
+                                        navController.navigate(route) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
                                         }
-                                        launchSingleTop = true
-                                        restoreState = true
                                     }
                                 }
                             )
