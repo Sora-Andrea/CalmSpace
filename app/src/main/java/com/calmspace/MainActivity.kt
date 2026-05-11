@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
         availablePlaybackTracks.map { PlaybackTrackOption(it.id, it.title) }
     )
     private val selectedTrackIdState = mutableStateOf(availablePlaybackTracks.firstOrNull()?.id.orEmpty())
+    private val selectedMonitorTrackIdState = mutableStateOf("white_noise")
     private val playbackLevelsState = mutableStateListOf<Float>().apply {
         repeat(VISUALIZER_BAR_COUNT) { add(0f) }
     }
@@ -322,7 +323,6 @@ class MainActivity : ComponentActivity() {
 
                         // ───────── Monitor Screen ─────────
                         composable(Routes.MONITOR) {
-                            val selectedMonitorTrackIdState = remember { mutableStateOf("white_noise") }
                             val isMonitoringSessionActiveState = remember { mutableStateOf(false) }
                             val exoTrackIds = remember(playbackTrackOptionsState.value) {
                                 playbackTrackOptionsState.value.map { it.id }.toSet()

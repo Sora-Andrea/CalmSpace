@@ -220,6 +220,7 @@ fun MonitorScreen(
         service
     ) {
         val svc = service ?: return@LaunchedEffect
+        svc.setSessionTrackId(selectedTrackId)
         val recordingActive = isRecording || svc.isRecording.value
         svc.setGeneratedNoisePlaybackEnabled(recordingActive && isServiceTrack(selectedTrackId))
         if (!recordingActive) return@LaunchedEffect
