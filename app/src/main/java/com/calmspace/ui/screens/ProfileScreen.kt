@@ -9,8 +9,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,6 +74,7 @@ fun ProfileScreen(
         ))
     }
     var sessionSummary by remember { mutableStateOf(buildSessionHistorySummary(emptyList())) }
+    var isEditingPreferences by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("calmspace_prefs", Context.MODE_PRIVATE)
@@ -213,8 +216,24 @@ fun ProfileScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Sleep Preferences", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            TextButton(onClick = onNavigateToSettings) {
-                Text("Edit", style = MaterialTheme.typography.labelMedium)
+            TextButton(onClick = {
+                if (isEditingPreferences) {
+                    // Save to SharedPreferences
+                    val prefs = context.getSharedPreferences("calmspace_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putInt("sleep_goal_hours", sleepGoalHours)
+                        .putInt("bedtime_reminder_hour", reminderHour)
+                        .putInt("bedtime_reminder_minute", reminderMinute)
+                        .putString("recording_quality", recordingQuality)
+                        .putBoolean("do_not_disturb", doNotDisturb)
+                        .apply()
+                }
+                isEditingPreferences = !isEditingPreferences
+            }) {
+                Text(
+                    if (isEditingPreferences) "Done" else "Edit",
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
         }
 
@@ -222,40 +241,212 @@ fun ProfileScreen(
 
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
             Column {
-                PreferenceRow(
-                    icon  = AppIcons.Nightlight,
-                    label = "Sleep Goal",
-                    value = "$sleepGoalHours hours"
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                PreferenceRow(
-                    icon  = AppIcons.Alarm,
-                    label = "Bedtime Reminder",
-                    value = profileFormatTime(reminderHour, reminderMinute)
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                PreferenceRow(
-                    icon  = AppIcons.HighQuality,
-                    label = "Recording Quality",
-                    value = recordingQuality
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                PreferenceRow(
-                    icon  = AppIcons.DoNotDisturb,
-                    label = "Do Not Disturb",
-                    value = if (doNotDisturb) "On" else "Off"
-                )
+                if (!isEditingPreferences) {
+                    PreferenceRow(
+                        icon  = AppIcons.Nightlight,
+                        label = "Sleep Goal",
+                        value = "$sleepGoalHours hours"
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                    PreferenceRow(
+                        icon  = AppIcons.Alarm,
+                        label = "Bedtime Reminder",
+                        value = profileFormatTime(reminderHour, reminderMinute)
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                    PreferenceRow(
+                        icon  = AppIcons.HighQuality,
+                        label = "Recording Quality",
+                        value = recordingQuality
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                    PreferenceRow(
+                        icon  = AppIcons.DoNotDisturb,
+                        label = "Do Not Disturb",
+                        value = if (doNotDisturb) "On" else "Off"
+                    )
+                } else {
+                    // ── Sleep Goal stepper ──
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = AppIcons.Nightlight, contentDescription = null,
+                            modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text("Sleep Goal", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        IconButton(
+                            onClick = { if (sleepGoalHours > 4) sleepGoalHours-- },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.Remove, contentDescription = "Decrease",
+                                modifier = Modifier.size(18.dp))
+                        }
+                        Text(
+                            text = "$sleepGoalHours hr",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.widthIn(min = 44.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        IconButton(
+                            onClick = { if (sleepGoalHours < 12) sleepGoalHours++ },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Increase",
+                                modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                    // ── Bedtime Reminder steppers ──
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = AppIcons.Alarm, contentDescription = null,
+                                modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text("Bedtime Reminder", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Hour stepper
+                            IconButton(onClick = { reminderHour = (reminderHour - 1 + 24) % 24 },
+                                modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Remove, contentDescription = "Hour down",
+                                    modifier = Modifier.size(18.dp))
+                            }
+                            Text(
+                                text = profileFormatHour(reminderHour),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.widthIn(min = 32.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            IconButton(onClick = { reminderHour = (reminderHour + 1) % 24 },
+                                modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Add, contentDescription = "Hour up",
+                                    modifier = Modifier.size(18.dp))
+                            }
+                            Text(":", style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp))
+                            // Minute stepper
+                            IconButton(onClick = { reminderMinute = (reminderMinute - 5 + 60) % 60 },
+                                modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Remove, contentDescription = "Minute down",
+                                    modifier = Modifier.size(18.dp))
+                            }
+                            Text(
+                                text = "%02d".format(reminderMinute),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.widthIn(min = 32.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            IconButton(onClick = { reminderMinute = (reminderMinute + 5) % 60 },
+                                modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Add, contentDescription = "Minute up",
+                                    modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            // AM/PM toggle
+                            val isAm = reminderHour < 12
+                            TextButton(
+                                onClick = { reminderHour = (reminderHour + 12) % 24 },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text(if (isAm) "AM" else "PM",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                    // ── Recording Quality chips ──
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = AppIcons.HighQuality, contentDescription = null,
+                                modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text("Recording Quality", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("Low", "Medium", "High").forEach { quality ->
+                                val selected = recordingQuality == quality
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { recordingQuality = quality },
+                                    label = { Text(quality, style = MaterialTheme.typography.labelMedium) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                    // ── Do Not Disturb switch ──
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = AppIcons.DoNotDisturb, contentDescription = null,
+                            modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text("Do Not Disturb", style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = doNotDisturb,
+                            onCheckedChange = { doNotDisturb = it }
+                        )
+                    }
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
         // ───────── Sleep Questionnaire ─────────
-        Text("Sleep Questionnaire", style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Sleep Questionnaire", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            TextButton(onClick = onEditQuestionnaire) {
+                Text("Edit", style = MaterialTheme.typography.labelMedium)
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -308,6 +499,11 @@ private fun profileFormatTime(hour: Int, minute: Int): String {
     val h12  = if (hour % 12 == 0) 12 else hour % 12
     val amPm = if (hour < 12) "AM" else "PM"
     return "%d:%02d %s".format(h12, minute, amPm)
+}
+
+private fun profileFormatHour(hour: Int): String {
+    val h12 = if (hour % 12 == 0) 12 else hour % 12
+    return h12.toString()
 }
 
 // ─────────────────────────────────────────────
