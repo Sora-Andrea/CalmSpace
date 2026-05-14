@@ -55,6 +55,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var username by remember { mutableStateOf("") }
+    var sleepGoalHours by remember { mutableIntStateOf(8) }
     var sessionSummary by remember { mutableStateOf(buildSessionHistorySummary(emptyList())) }
     var recentSessions by remember { mutableStateOf<List<SleepSessionLogStore.CompletedSessionRecord>>(emptyList()) }
     var recentSessionsError by remember { mutableStateOf<String?>(null) }
@@ -81,14 +82,19 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        username = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
-            .getString("user_name", "") ?: ""
+        val prefs = context.getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+        username = prefs.getString("user_name", "") ?: ""
+        sleepGoalHours = prefs.getInt("sleep_goal_hours", 8).coerceIn(1, 9)
         refreshSessionHistory()
     }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                sleepGoalHours = context
+                    .getSharedPreferences("calmspace_prefs", android.content.Context.MODE_PRIVATE)
+                    .getInt("sleep_goal_hours", 8)
+                    .coerceIn(1, 9)
                 refreshSessionHistory()
             }
         }
@@ -251,7 +257,10 @@ fun HomeScreen(
 
                 // ───── Bar Chart ─────
                 // TODO: Replace bar heights with real session duration data from Room
-                WeeklyBarChart(data = weeklyData)
+                WeeklyBarChart(
+                    data = weeklyData,
+                    sleepGoalHours = sleepGoalHours
+                )
             }
         }
 
@@ -363,28 +372,56 @@ fun SleepStat(
 
 @Composable
 fun WeeklyBarChart(
-    data: List<Pair<String, Float>> // Pair(dayLabel, relativeHeight 0.0-1.0)
+    data: List<Pair<String, Float>>, // Pair(dayLabel, relativeHeight against 8h)
+    sleepGoalHours: Int
 ) {
     val barMaxHeight = 80.dp
+    val goalHours = sleepGoalHours.coerceIn(1, 9).toFloat()
+    val guideLines = goalHours.toInt()
+    val hoursData = data.map { (_, normalizedToEightHours) ->
+        (normalizedToEightHours.coerceIn(0f, 1f) * 8f).coerceIn(0f, goalHours)
+    }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.Bottom
-    ) {
-        data.forEach { (day, value) ->
+    Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(barMaxHeight)
+        ) {
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Bottom
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
-                    modifier = Modifier
-                        .width(24.dp)
-                        .height(barMaxHeight * value)
-                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
+                repeat(guideLines + 1) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                data.forEachIndexed { index, (_, _) ->
+                    val normalizedToGoal = (hoursData[index] / goalHours).coerceIn(0f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .width(24.dp)
+                            .height(barMaxHeight * normalizedToGoal)
+                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            data.forEach { (day, _) ->
                 Text(
                     text = day,
                     style = MaterialTheme.typography.bodySmall,
@@ -393,6 +430,12 @@ fun WeeklyBarChart(
                 )
             }
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Scale: 0-${goalHours.toInt()}h",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.Gray
+        )
     }
 }
 

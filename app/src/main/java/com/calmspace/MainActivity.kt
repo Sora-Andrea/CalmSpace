@@ -201,9 +201,9 @@ class MainActivity : ComponentActivity() {
         selectedThemeState.value = runCatching {
             AppTheme.valueOf(prefs.getString("app_theme", AppTheme.DEEP_WATER.name) ?: "")
         }.getOrDefault(AppTheme.DEEP_WATER)
+        //        val startDestination = Routes.MONITOR
         //
-        val startDestination = Routes.MONITOR
-        //val startDestination = if (prefs.getBoolean("logged_in", false)) Routes.HOME else Routes.WELCOME
+        val startDestination = if (prefs.getBoolean("logged_in", false)) Routes.HOME else Routes.WELCOME
         hasMicPermissionState.value = hasRecordAudioPermission()
         userTracksManager = UserTracksManager(this)
         val savedUris = userTracksManager.getSavedUris()

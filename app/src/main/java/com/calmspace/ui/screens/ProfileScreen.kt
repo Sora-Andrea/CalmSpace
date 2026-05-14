@@ -203,7 +203,10 @@ fun ProfileScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                WeeklyBarChart(values = weeklyData)
+                WeeklyBarChart(
+                    values = weeklyData,
+                    sleepGoalHours = sleepGoalHours
+                )
             }
         }
 
@@ -559,23 +562,40 @@ fun QuestionnaireItem(name: String, isCompleted: Boolean, onClick: () -> Unit) {
 // ─────────────────────────────────────────────
 
 @Composable
-fun WeeklyBarChart(values: List<Float>) {
+fun WeeklyBarChart(
+    values: List<Float>,
+    sleepGoalHours: Int
+) {
     val labels       = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
     val primaryColor = MaterialTheme.colorScheme.primary
     val dimColor     = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-    val maxIndex     = values.indexOf(values.maxOrNull() ?: 0f)
+    val goalHours    = sleepGoalHours.coerceIn(1, 9).toFloat()
+    val hoursValues  = values.map { (it.coerceIn(0f, 1f) * 8f).coerceIn(0f, goalHours) }
+    val maxIndex     = hoursValues.indexOf(hoursValues.maxOrNull() ?: 0f)
+    val guideLines   = goalHours.toInt()
 
     Column {
         Canvas(modifier = Modifier.fillMaxWidth().height(72.dp)) {
-            val count    = values.size
+            val count    = hoursValues.size
             val gapRatio = 0.4f
             val barW     = size.width / (count + (count - 1) * gapRatio)
             val gap      = barW * gapRatio
             val radius   = barW / 2f
 
-            values.forEachIndexed { index, value ->
+            // Horizontal hour guides based on sleep goal scale (max 9h).
+            for (line in 0..guideLines) {
+                val y = size.height - (size.height * (line.toFloat() / goalHours))
+                drawLine(
+                    color = primaryColor.copy(alpha = 0.18f),
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1f
+                )
+            }
+
+            hoursValues.forEachIndexed { index, hours ->
                 val left      = index * (barW + gap)
-                val barHeight = size.height * value.coerceIn(0f, 1f)
+                val barHeight = size.height * (hours / goalHours).coerceIn(0f, 1f)
                 val top       = size.height - barHeight
                 drawRoundRect(
                     color        = if (index == maxIndex) primaryColor else dimColor,
@@ -592,6 +612,12 @@ fun WeeklyBarChart(values: List<Float>) {
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f))
             }
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Scale: 0-${goalHours.toInt()}h",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+        )
     }
 }
 
