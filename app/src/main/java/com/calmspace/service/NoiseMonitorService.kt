@@ -177,6 +177,7 @@ class NoiseMonitorService : Service() {
     private var running = false
     private var sessionStartElapsedRealtimeMs: Long? = null
     private var hasActiveSessionLog = false
+    @Volatile private var sessionTrackId: String = "white_noise"
 
     // Session metrics (persisted into SleepSessionLogStore when session ends).
     private val sessionMetricsLock = Any()
@@ -362,9 +363,21 @@ class NoiseMonitorService : Service() {
 
     fun setSoundType(type: SoundType) {
         _selectedSound.value = type
+        sessionTrackId = soundTypeToTrackId(type)
+        if (hasActiveSessionLog) {
+            SleepSessionLogStore.updateActiveSessionTrackId(applicationContext, sessionTrackId)
+        }
         // Reset generator state so the new sound starts clean
         b0 = 0.0; b1 = 0.0; b2 = 0.0; b3 = 0.0; b4 = 0.0; b5 = 0.0; b6 = 0.0
         brownLast = 0.0; greyZ1 = 0.0; greyZ2 = 0.0; lastWhiteForBlue = 0.0
+    }
+
+    fun setSessionTrackId(trackId: String) {
+        if (trackId.isBlank()) return
+        sessionTrackId = trackId
+        if (hasActiveSessionLog) {
+            SleepSessionLogStore.updateActiveSessionTrackId(applicationContext, sessionTrackId)
+        }
     }
 
     fun setStartingVolume(volume: Float) {
@@ -444,7 +457,7 @@ class NoiseMonitorService : Service() {
         SleepSessionLogStore.markSessionStarted(
             context = applicationContext,
             userId = activeUserId,
-            trackId = _selectedSound.value.name,
+            trackId = sessionTrackId,
             startUtcMs = now,
             startElapsedMs = startElapsedRealtimeMs
         )
@@ -1024,6 +1037,14 @@ class NoiseMonitorService : Service() {
                 maskingPlaybackMs = sessionMaskingPlaybackMs.coerceAtLeast(0L)
             )
         }
+    }
+
+    private fun soundTypeToTrackId(type: SoundType): String = when (type) {
+        SoundType.WHITE_NOISE -> "white_noise"
+        SoundType.PINK_NOISE -> "pink_noise"
+        SoundType.BROWN_NOISE -> "brown_noise"
+        SoundType.BLUE_NOISE -> "blue_noise"
+        SoundType.GREY_NOISE -> "grey_noise"
     }
 
     private fun currentPlaybackGainForEstimation(): Float {

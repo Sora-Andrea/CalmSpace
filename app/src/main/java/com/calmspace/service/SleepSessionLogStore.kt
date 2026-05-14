@@ -52,6 +52,18 @@ object SleepSessionLogStore {
             .apply()
     }
 
+    fun updateActiveSessionTrackId(
+        context: Context,
+        trackId: String?
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val startUtcMs = prefs.getLong(KEY_ACTIVE_START_UTC_MS, -1L)
+        if (startUtcMs <= 0L) return
+        prefs.edit()
+            .putString(KEY_ACTIVE_TRACK_ID, trackId)
+            .apply()
+    }
+
     fun markSessionEnded(
         context: Context,
         endUtcMs: Long,

@@ -220,6 +220,7 @@ fun MonitorScreen(
         service
     ) {
         val svc = service ?: return@LaunchedEffect
+        svc.setSessionTrackId(selectedTrackId)
         val recordingActive = isRecording || svc.isRecording.value
         svc.setGeneratedNoisePlaybackEnabled(recordingActive && isServiceTrack(selectedTrackId))
         if (!recordingActive) return@LaunchedEffect
@@ -315,7 +316,11 @@ fun MonitorScreen(
     // ─────────────────────────────────────────────────────────────────
 
     val bucketLabel = if (isRecording) {
-        currentBucket.ifBlank { "Listening..." }
+        currentBucket
+            .ifBlank { "Listening..." }
+            .let { label ->
+                if (label.equals("UNKNOWN", ignoreCase = true)) "Silence / Unknown" else label
+            }
     } else {
         "No session active"
     }
